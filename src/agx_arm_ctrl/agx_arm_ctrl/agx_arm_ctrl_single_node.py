@@ -18,6 +18,7 @@ from agx_arm_msgs.msg import (
     HandStatus, HandCmd, HandPositionTimeCmd,
     MoveMITMsg
 )
+from agx_arm_msgs.srv import SetMITGains
 from agx_arm_ctrl.effector import AgxGripperWrapper, Revo2Wrapper, Revo2TouchWrapper
 
 GRIPPER_JOINT_NAME = "gripper"
@@ -77,6 +78,7 @@ class AgxArmRosNode(Node):
 
         ### AgxArmFactory
         self._init_agx_arm()
+        self._init_mit_gains()
 
         ### effector
         self._init_effector()
@@ -108,6 +110,8 @@ class AgxArmRosNode(Node):
         self.declare_parameter("tcp_offset", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         self.declare_parameter("gripper_default_effort", 1.0)
         self.declare_parameter("control_enabled", True)
+        self.declare_parameter("mit_kp", [10.0])
+        self.declare_parameter("mit_kd", [0.8])
 
     def _load_parameters(self):
         self.can_port = self.get_parameter("can_port").value
@@ -162,6 +166,30 @@ class AgxArmRosNode(Node):
         self.get_logger().info(f"tcp_offset: {self.tcp_offset}")
         self.get_logger().info(f"gripper_default_effort: {self.gripper_default_effort}")
         self.get_logger().info(f"control_enabled: {self.control_enabled}")
+
+    def _init_mit_gains(self):
+        if self.fast_mode:
+            kp_param = list(self.get_parameter("mit_kp").value)
+            kd_param = list(self.get_parameter("mit_kd").value)
+            self.mit_kp = self._expand_joint_gains(kp_param, 10.0)
+            self.mit_kd = self._expand_joint_gains(kd_param, 0.8)
+            self.get_logger().info(f"mit_kp: {self.mit_kp}")
+            self.get_logger().info(f"mit_kd: {self.mit_kd}")
+
+    def _expand_joint_gains(self, values, default: float):
+        if not values:
+            return [default] * self.arm_joint_count
+        if len(values) == 1:
+            return [float(values[0])] * self.arm_joint_count
+        if len(values) != self.arm_joint_count:
+            self.get_logger().warn(
+                f"Expected {self.arm_joint_count} gain values, got {len(values)}; "
+                f"padding or truncating with default {default}"
+            )
+        gains = [float(v) for v in values[:self.arm_joint_count]]
+        while len(gains) < self.arm_joint_count:
+            gains.append(default)
+        return gains
 
     def _init_agx_arm(self):
         config: PiperCanDefaultConfig = create_agx_arm_config(
@@ -324,6 +352,7 @@ class AgxArmRosNode(Node):
         self.create_service(Empty, "emergency_stop", self._emergency_stop_callback)
         if not self.is_switch_seamlessly:
             self.create_service(Empty, "exit_teach_mode", self._exit_teach_mode_callback)
+        self.create_service(SetMITGains, "set_mit_gains", self._set_mit_gains_callback)
 
     ### utility methods
     def _float_to_ros_time(self, timestamp: float) -> Time:
@@ -333,11 +362,42 @@ class AgxArmRosNode(Node):
         ros_time.nanosec = int((timestamp - ros_time.sec) * 1e9)
         return ros_time
 
-    def _safe_get_value(self, array, index, default=0.0) -> float:
+    @staticmethod
+    def _is_invalid_number(value) -> bool:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return True
+        return math.isnan(value) or math.isinf(value)
+
+    def _get_joint_state_field(self, array, index):
+        """Return (value, provided). NaN/Inf/missing count as not provided."""
         if index >= len(array):
-            return default
+            return None, False
         value = array[index]
-        return default if math.isnan(value) else value
+        if self._is_invalid_number(value):
+            return None, False
+        return float(value), True
+
+    def _parse_arm_joint_command(self, msg: JointState):
+        """Parse arm joints from JointState. Invalid values mean 'not provided'."""
+        arm_data = {}
+        for idx, name in enumerate(msg.name):
+            if name not in self.arm_joint_names:
+                continue
+            pos, pos_provided = self._get_joint_state_field(msg.position, idx)
+            if not pos_provided:
+                continue
+            vel, vel_provided = self._get_joint_state_field(msg.velocity, idx)
+            effort, effort_provided = self._get_joint_state_field(msg.effort, idx)
+            arm_data[name] = {
+                "pos": pos,
+                "vel": vel if vel_provided else 0.0,
+                "effort": effort if effort_provided else 0.0,
+                "vel_provided": vel_provided,
+                "effort_provided": effort_provided,
+            }
+        return arm_data
 
     def _check_arm_ready(self) -> bool:
         joint_states = self.agx_arm.get_joint_angles()
@@ -638,20 +698,47 @@ class AgxArmRosNode(Node):
             self._publish_hand_status()
 
     ### arm control callbacks
-    def _control_arm_joints(self, joint_pos):
-        arm_joints = {
-            name : value
-            for name, value in joint_pos.items()
-            if name in self.arm_joint_names
-        }
-        if arm_joints:
-            joints = [arm_joints.get(name, 0) for name in self.arm_joint_names]
-            if self.fast_mode:
-                self.agx_arm.move_js(joints)
-                self.is_mit_mode = True
-            else:
-                self.agx_arm.move_j(joints)
-                self.is_mit_mode = False
+    def _control_arm_joints(self, msg: JointState):
+        arm_data = self._parse_arm_joint_command(msg)
+        # No arm name with valid position → skip move_j / move_js / move_mit
+        if not arm_data:
+            return
+
+        if not self.fast_mode:
+            joints = [
+                arm_data[name]["pos"] if name in arm_data else 0.0
+                for name in self.arm_joint_names
+            ]
+            self.agx_arm.move_j(joints)
+            self.is_mit_mode = False
+            return
+
+        # fast_mode: name without valid position already filtered out above
+        all_arm_provided = all(name in arm_data for name in self.arm_joint_names)
+        has_vel_or_torque = any(
+            data["vel_provided"] or data["effort_provided"]
+            for data in arm_data.values()
+        )
+
+        # Full arm positions, no velocity/effort → move_js
+        if all_arm_provided and not has_vel_or_torque:
+            joints = [arm_data[name]["pos"] for name in self.arm_joint_names]
+            self.agx_arm.move_js(joints)
+            self.is_mit_mode = True
+            return
+
+        # Partial joints, or full joints with any velocity/effort → move_mit
+        for name, data in arm_data.items():
+            joint_index = self.arm_joint_names.index(name) + 1
+            self.agx_arm.move_mit(
+                joint_index=joint_index,
+                p_des=data["pos"],
+                v_des=data["vel"],
+                kp=self.mit_kp[joint_index - 1],
+                kd=self.mit_kd[joint_index - 1],
+                t_ff=data["effort"],
+            )
+        self.is_mit_mode = True
 
     def _control_gripper_joint(self, joint_pos, joint_effort):
         if self.gripper is None:
@@ -697,26 +784,35 @@ class AgxArmRosNode(Node):
         if not self._check_can_control():
             return
 
-        joint_pos = {
-            name: self._safe_get_value(msg.position, idx)
-            for idx, name in enumerate(msg.name)
-        }
-        joint_effort = {
-            name: self._safe_get_value(msg.effort, idx)
-            for idx, name in enumerate(msg.name)
-        }
-        self._control_arm_joints(joint_pos)
+        joint_pos = {}
+        joint_effort = {}
+        for idx, name in enumerate(msg.name):
+            pos, pos_provided = self._get_joint_state_field(msg.position, idx)
+            if pos_provided:
+                joint_pos[name] = pos
+            effort, effort_provided = self._get_joint_state_field(msg.effort, idx)
+            if effort_provided:
+                joint_effort[name] = effort
+
+        self._control_arm_joints(msg)
         self._control_gripper_joint(joint_pos, joint_effort)
         self._control_hand_joints(joint_pos)
 
     def _move_j_callback(self, msg: JointState):
         if not self._check_can_control():
             return
+        if not msg.name:
+            return
 
         joint_pos = {}
         for idx, joint_name in enumerate(msg.name):
-            joint_pos[joint_name] = self._safe_get_value(msg.position, idx)
-        joints = [joint_pos.get(i, 0) for i in self.arm_joint_names]
+            pos, pos_provided = self._get_joint_state_field(msg.position, idx)
+            if pos_provided:
+                joint_pos[joint_name] = pos
+        if not any(name in joint_pos for name in self.arm_joint_names):
+            return
+
+        joints = [joint_pos.get(name, 0.0) for name in self.arm_joint_names]
         self.agx_arm.move_j(joints)
         self.is_mit_mode = False
 
@@ -754,11 +850,18 @@ class AgxArmRosNode(Node):
     def _move_js_callback(self, msg: JointState):
         if not self._check_can_control():
             return
+        if not msg.name:
+            return
 
         joint_pos = {}
         for idx, joint_name in enumerate(msg.name):
-            joint_pos[joint_name] = self._safe_get_value(msg.position, idx)
-        joints = [joint_pos.get(i, 0) for i in self.arm_joint_names]
+            pos, pos_provided = self._get_joint_state_field(msg.position, idx)
+            if pos_provided:
+                joint_pos[joint_name] = pos
+        if not any(name in joint_pos for name in self.arm_joint_names):
+            return
+
+        joints = [joint_pos.get(name, 0.0) for name in self.arm_joint_names]
         self.agx_arm.move_js(joints)
         self.is_mit_mode = True
 
@@ -776,6 +879,12 @@ class AgxArmRosNode(Node):
             return
         
         for i in range(len(msg.joint_index)):
+            values = [msg.p_des[i], msg.v_des[i], msg.kp[i], msg.kd[i], msg.torque[i]]
+            if any(self._is_invalid_number(v) for v in values):
+                self.get_logger().warn(
+                    f"Skip move_mit for joint_index={msg.joint_index[i]}: invalid NaN/Inf value"
+                )
+                continue
             params = {
                 "joint_index": msg.joint_index[i],
                 "p_des": msg.p_des[i],
@@ -845,6 +954,56 @@ class AgxArmRosNode(Node):
             self.get_logger().error(f"hand control param error: {e}")
 
     ### service callbacks
+    def _set_mit_gains_callback(self, request, response):
+        names = list(request.joint_names)
+        kp = list(request.kp)
+        kd = list(request.kd)
+        if not names:
+            response.success = False
+            response.message = "joint_names must not be empty"
+            return response
+        if not kp and not kd:
+            response.success = False
+            response.message = "At least one of kp or kd must be provided"
+            return response
+        if kp and len(kp) != len(names):
+            response.success = False
+            response.message = "kp length must match joint_names when kp is provided"
+            return response
+        if kd and len(kd) != len(names):
+            response.success = False
+            response.message = "kd length must match joint_names when kd is provided"
+            return response
+
+        updated = []
+        for i, name in enumerate(names):
+            if name not in self.arm_joint_names:
+                response.success = False
+                response.message = f"Unknown arm joint: {name}"
+                return response
+            idx = self.arm_joint_names.index(name)
+            changes = []
+            if kp:
+                if self._is_invalid_number(kp[i]):
+                    response.success = False
+                    response.message = f"Invalid kp for {name}: NaN/Inf is not allowed"
+                    return response
+                self.mit_kp[idx] = float(kp[i])
+                changes.append(f"kp={self.mit_kp[idx]}")
+            if kd:
+                if self._is_invalid_number(kd[i]):
+                    response.success = False
+                    response.message = f"Invalid kd for {name}: NaN/Inf is not allowed"
+                    return response
+                self.mit_kd[idx] = float(kd[i])
+                changes.append(f"kd={self.mit_kd[idx]}")
+            updated.append(f"{name}({', '.join(changes)})")
+
+        response.success = True
+        response.message = f"Updated MIT gains: {', '.join(updated)}"
+        self.get_logger().info(response.message)
+        return response
+
     def _enable_callback(self, request, response):
         try:
             if not self._check_arm_ready():

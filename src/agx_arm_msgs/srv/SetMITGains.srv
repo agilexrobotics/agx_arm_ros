@@ -1,0 +1,9 @@
+# Set MIT PD gains for arm joints (single or batch).
+# joint_names is required. Provide kp and/or kd; empty array means keep current value.
+
+string[] joint_names
+float64[] kp
+float64[] kd
+---
+bool success
+string message

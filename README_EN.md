@@ -250,12 +250,14 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 | `revo2_type` | `left` | Revo2 / Revo2 Touch hand side (must match URDF joint names and SDK hand side) | `left`, `right` |
 | `namespace` | empty string | Arm instance namespace | Any valid ROS namespace |
 | `auto_enable` | `true` | Auto enable on startup | `true`, `false` |
-| `fast_mode` | `false` | Enable fast mode (If enabled, `/control/joint_states` will internally switch to the unsmoothed and non-interpolated `move_js` joint control interface to command the robotic arm.) | `true`, `false` |
+| `fast_mode` | `false` | Fast mode: `/control/joint_states` selects `move_js` or `move_mit` for the arm from position/velocity/effort fields (see below); when `false`, always uses `move_j` | `true`, `false` |
 | `speed_percent` | `100` | Motion speed (%) | `0-100` |
 | `pub_rate` | `200` | Status publish rate (Hz) | - |
 | `enable_timeout` | `5.0` | Enable timeout (seconds) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | Tool Center Point (TCP) offset relative to the flange center [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | The default effort of the gripper (in N) | `>=0.0` |
+| `mit_kp` | `[10.0]` | MIT position gains: a single value is broadcast to all arm joints, or pass a per-joint array; range `[0.0, 500.0]` | - |
+| `mit_kd` | `[0.8]` | MIT velocity gains: a single value is broadcast to all arm joints, or pass a per-joint array; range `[-5.0, 5.0]` | - |
 | `control_enabled` | `true` | Whether to accept `/control/*` commands. When `false`, control topics are ignored and only feedback is published | `true`, `false` |
 | `log_level` | `info` | Log level | `debug`, `info`, `warn`, `error`, `fatal` |
 
@@ -523,6 +525,20 @@ Revo2 Touch supports two integration paths—use one according to your setup (do
     > 1. After executing this command, the robotic arm will first perform a homing operation and then restart automatically; there is a risk of falling during this process. It is recommended to gently hold the robotic arm after homing to prevent damage from falling.
     > 2. For Piper series robotic arms with firmware version 1.8.5 and above, the seamless mode switching feature is supported. There is no need to execute the above service command to exit teach mode, as the system will complete the mode switch automatically, avoiding the aforementioned fall risk.
 
+6. Set MIT gains (single joint / batch; `kp`/`kd` may be set independently)
+
+    ```bash
+    # Update kp for joint1 only
+    ros2 service call /set_mit_gains agx_arm_msgs/srv/SetMITGains \
+      "{joint_names: [joint1], kp: [15.0]}"
+
+    # Update kp/kd for multiple joints
+    ros2 service call /set_mit_gains agx_arm_msgs/srv/SetMITGains \
+      "{joint_names: [joint1, joint2], kp: [15.0, 12.0], kd: [1.0, 0.9]}"
+    ```
+
+    > `kp` range `[0.0, 500.0]`, `kd` range `[-5.0, 5.0]` (same as `move_mit`).
+
 ### Status Subscription
 
 1. Joint states
@@ -768,16 +784,26 @@ Message type: `agx_arm_msgs/HandStatus`
 
 #### `/control/joint_states` Details
 
-This topic uses the `sensor_msgs/JointState` message type and supports simultaneous control of arm joints and end-effector (gripper/dexterous hand). Only the joints to be controlled need to be sent; joints not included will not be affected.
+This topic uses the `sensor_msgs/JointState` message type and supports simultaneous control of arm joints and end-effector (gripper/dexterous hand). Only the joints to be controlled need to be sent; for the arm, commands without a valid `name`+`position` are skipped.
 
 **Message Field Description:**
 
 | Field | Description |
 |-------|-------------|
 | `name` | Joint name list |
-| `position` | Target position for corresponding joints |
-| `velocity` | Not used (can be left empty) |
-| `effort` | Used for gripper force control (only effective for `gripper` joint) |
+| `position` | Target position; `NaN`/`Inf`/missing counts as not provided |
+| `velocity` | Desired velocity for arm joints when `fast_mode:=true` and `move_mit` is used; `NaN`/`Inf`/missing counts as not provided (treated as 0) |
+| `effort` | Gripper force (`gripper`); feed-forward torque `t_ff` for arm joints in `move_mit`; `NaN`/`Inf`/missing counts as not provided |
+
+**Arm control routing (arm joints only):**
+
+| `fast_mode` | Condition | Backend API |
+|-------------|-----------|-------------|
+| `false` | Valid position present | `move_j` |
+| `true` | All arm joint positions provided, and no `velocity`/`effort` for any joint | `move_js` |
+| `true` | Incomplete joint set, or complete set with any `velocity`/`effort` | `move_mit` (only joints with valid position; `kp`/`kd` from `mit_kp`/`mit_kd`) |
+
+> **Note:** With `fast_mode:=true`, if only `name` is present without a valid `position`, neither `move_js` nor `move_mit` is executed. MIT gains are initialized via `mit_kp`/`mit_kd` (`kp` `[0.0, 500.0]`, `kd` `[-5.0, 5.0]`) and can be updated at runtime with `/set_mit_gains`.
 
 **Gripper control via `/control/joint_states`** (requires `effector_type=agx_gripper`)
 
@@ -911,6 +937,7 @@ Message type: `agx_arm_msgs/HandPositionTimeCmd`
 | `/move_home` | `std_srvs/Empty` | Move to home position | Always available |
 | `/emergency_stop` | `std_srvs/Empty` | Emergency stop (hold current position) | Always available |
 | `/exit_teach_mode` | `std_srvs/Empty` | Exit teach mode | Piper series |
+| `/set_mit_gains` | `agx_arm_msgs/SetMITGains` | Set arm MIT `kp`/`kd` (single or batch; either field optional). `kp` `[0.0, 500.0]`, `kd` `[-5.0, 5.0]` | Always available |
 
 ---
 

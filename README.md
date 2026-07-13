@@ -250,12 +250,14 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 | `revo2_type` | `left` | Revo2 / Revo2 Touch 左右手（与 URDF 关节名、SDK 手侧一致） | `left`, `right` |
 | `namespace` | 空字符串 | 机械臂实例命名空间 | 任意合法 ROS 命名空间 |
 | `auto_enable` | `true` | 启动时自动使能 | `true`, `false` |
-| `fast_mode` | `false` | 启用快速模式（如果启用，`/control/joint_states` 内部将改用无平滑无插值的 `move_js` 关节控制接口控制机械臂） | `true`, `false` |
+| `fast_mode` | `false` | 启用快速模式：`/control/joint_states` 对机械臂按位置/速度/力矩字段选择 `move_js` 或 `move_mit`（见下文）；`false` 时固定使用 `move_j` | `true`, `false` |
 | `speed_percent` | `100` | 运动速度 (%) | `0-100` |
 | `pub_rate` | `200` | 状态发布频率 (Hz) | - |
 | `enable_timeout` | `5.0` | 使能超时 (秒) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | 工具中心(TCP)相对法兰盘中心的偏移 [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | 夹爪默认力（单位：N） | `>=0.0` |
+| `mit_kp` | `[10.0]` | MIT 位置增益：传 1 个值则广播到全部臂关节，也可传与关节数等长的数组；范围 `[0.0, 500.0]` | - |
+| `mit_kd` | `[0.8]` | MIT 速度增益：传 1 个值则广播到全部臂关节，也可传与关节数等长的数组；范围 `[-5.0, 5.0]` | - |
 | `control_enabled` | `true` | 是否接收 `/control/*` 指令。设为 `false` 时会拒绝控制话题，仅保留反馈发布 | `true`, `false` |
 | `log_level` | `info` | 日志级别 | `debug`, `info`, `warn`, `error`, `fatal` |
 
@@ -525,6 +527,20 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
     > 1. 执行该指令后，机械臂会先执行回零位操作，随后自动重启；此过程中机械臂存在坠落风险，建议在回零位完成后用手轻扶机械臂，防止坠落损坏。
     > 2. Piper 系列机器臂若固件版本为 1.8.5 及以上，已支持 模式无缝切换 功能，无需执行上述退出示教模式的服务指令，系统会自动完成模式切换，可规避上述坠落风险。
 
+6. 设置 MIT 增益（单关节 / 批量；`kp`/`kd` 可只传其一）
+
+    ```bash
+    # 只改 joint1 的 kp
+    ros2 service call /set_mit_gains agx_arm_msgs/srv/SetMITGains \
+      "{joint_names: [joint1], kp: [15.0]}"
+
+    # 同时改多个关节的 kp/kd
+    ros2 service call /set_mit_gains agx_arm_msgs/srv/SetMITGains \
+      "{joint_names: [joint1, joint2], kp: [15.0, 12.0], kd: [1.0, 0.9]}"
+    ```
+
+    > `kp` 范围 `[0.0, 500.0]`，`kd` 范围 `[-5.0, 5.0]`（与 `move_mit` 一致）。
+
 ### 状态订阅
 
 1. 关节状态
@@ -770,16 +786,26 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
 
 #### `/control/joint_states` 详细说明
 
-该话题使用 `sensor_msgs/JointState` 消息类型，支持同时控制机械臂关节和末端执行器（夹爪/灵巧手）。只需发送要控制的关节即可，未包含的关节不受影响。
+该话题使用 `sensor_msgs/JointState` 消息类型，支持同时控制机械臂关节和末端执行器（夹爪/灵巧手）。只需发送要控制的关节即可；对机械臂而言，无有效 `name`+`position` 时跳过下发。
 
 **消息字段说明：**
 
 | 字段 | 说明 |
 |------|------|
 | `name` | 关节名称列表 |
-| `position` | 对应关节的目标位置 |
-| `velocity` | 未使用（可留空） |
-| `effort` | 用于夹爪力控制（仅对 `gripper` 关节有效） |
+| `position` | 对应关节的目标位置；`NaN`/`Inf`/缺省视为未传 |
+| `velocity` | 臂关节在 `fast_mode:=true` 且走 `move_mit` 时作为期望速度；`NaN`/`Inf`/缺省视为未传（按 0） |
+| `effort` | 夹爪力控制（`gripper`）；臂关节在 `move_mit` 时作为前馈力矩 `t_ff`；`NaN`/`Inf`/缺省视为未传 |
+
+**机械臂控制路由（仅臂关节）：**
+
+| `fast_mode` | 条件 | 底层接口 |
+|-------------|------|----------|
+| `false` | 有有效位置 | `move_j` |
+| `true` | 传齐全部臂关节位置，且无人传 `velocity`/`effort` | `move_js` |
+| `true` | 未传齐，或传齐但任一关节传了 `velocity`/`effort` | `move_mit`（仅对有有效位置的关节；`kp`/`kd` 取 `mit_kp`/`mit_kd`） |
+
+> **注意：** `fast_mode:=true` 且仅有 `name`、无有效 `position` 时，不执行 `move_js`/`move_mit`。MIT 增益可通过启动参数 `mit_kp`/`mit_kd` 初始化（`kp` `[0.0, 500.0]`，`kd` `[-5.0, 5.0]`），运行时通过 `/set_mit_gains` 修改。
 
 **通过 `/control/joint_states` 控制夹爪**（需配置 `effector_type=agx_gripper`）
 
@@ -913,6 +939,7 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
 | `/move_home` | `std_srvs/Empty` | 回零位 | 始终可用 |
 | `/emergency_stop` | `std_srvs/Empty` | 急停（保持当前位置） | 始终可用 |
 | `/exit_teach_mode` | `std_srvs/Empty` | 退出示教模式 | Piper 系列 |
+| `/set_mit_gains` | `agx_arm_msgs/SetMITGains` | 设置臂关节 MIT `kp`/`kd`（支持单关节或批量；可只改其一）。`kp` 范围 `[0.0, 500.0]`，`kd` 范围 `[-5.0, 5.0]` | 始终可用 |
 
 ---
 

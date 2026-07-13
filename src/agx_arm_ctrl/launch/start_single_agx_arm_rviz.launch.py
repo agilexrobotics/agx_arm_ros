@@ -122,6 +122,18 @@ def generate_launch_description():
         description='Default effort for gripper commands (>= 0.0).'
     )
 
+    mit_kp_arg = DeclareLaunchArgument(
+        'mit_kp',
+        default_value='[10.0]',
+        description='MIT kp gain(s) for arm joints (scalar or per-joint array).'
+    )
+
+    mit_kd_arg = DeclareLaunchArgument(
+        'mit_kd',
+        default_value='[0.8]',
+        description='MIT kd gain(s) for arm joints (scalar or per-joint array).'
+    )
+
     urdf_effector_type = PythonExpression([
         "'revo2' if '", LaunchConfiguration('effector_type'), "' == 'revo2_touch' else '",
         LaunchConfiguration('effector_type'), "'",
@@ -172,6 +184,8 @@ def generate_launch_description():
             'revo2_type': LaunchConfiguration('revo2_type'),
             'tcp_offset': LaunchConfiguration('tcp_offset'),
             'gripper_default_effort': LaunchConfiguration('gripper_default_effort'),
+            'mit_kp': LaunchConfiguration('mit_kp'),
+            'mit_kd': LaunchConfiguration('mit_kd'),
         }.items(),
     )
 
@@ -190,6 +204,8 @@ def generate_launch_description():
         enable_timeout_arg,
         tcp_offset_arg,
         gripper_default_effort_arg,
+        mit_kp_arg,
+        mit_kd_arg,
         follow_arg,
         feedback_topic_arg,
         control_topic_arg,

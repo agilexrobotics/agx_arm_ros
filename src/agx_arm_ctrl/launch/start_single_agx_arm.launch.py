@@ -92,6 +92,18 @@ def generate_launch_description():
         description='Default effort for gripper commands (>= 0.0).'
     )
 
+    mit_kp_arg = DeclareLaunchArgument(
+        'mit_kp',
+        default_value='[10.0]',
+        description='MIT kp gain(s) for arm joints (scalar or per-joint array).'
+    )
+
+    mit_kd_arg = DeclareLaunchArgument(
+        'mit_kd',
+        default_value='[0.8]',
+        description='MIT kd gain(s) for arm joints (scalar or per-joint array).'
+    )
+
     control_enabled_arg = DeclareLaunchArgument(
         'control_enabled',
         default_value='true',
@@ -120,6 +132,8 @@ def generate_launch_description():
             'tcp_offset': LaunchConfiguration('tcp_offset'),
             'gripper_default_effort': LaunchConfiguration('gripper_default_effort'),
             'control_enabled': LaunchConfiguration('control_enabled'),
+            'mit_kp': LaunchConfiguration('mit_kp'),
+            'mit_kd': LaunchConfiguration('mit_kd'),
         }],
         remappings=[
             # feedback topics
@@ -147,6 +161,7 @@ def generate_launch_description():
             ('move_home', 'move_home'),
             ('emergency_stop', 'emergency_stop'),
             ('exit_teach_mode', 'exit_teach_mode'),
+            ('set_mit_gains', 'set_mit_gains'),
         ],
     )
 
@@ -165,6 +180,8 @@ def generate_launch_description():
         enable_timeout_arg,
         tcp_offset_arg,
         gripper_default_effort_arg,
+        mit_kp_arg,
+        mit_kd_arg,
         control_enabled_arg,
         # node
         agx_arm_node,

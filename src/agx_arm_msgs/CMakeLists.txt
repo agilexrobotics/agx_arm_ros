@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HandCmd.msg"
   "msg/HandPositionTimeCmd.msg"
   "msg/MoveMITMsg.msg"
+  "srv/SetMITGains.srv"
   DEPENDENCIES std_msgs geometry_msgs
 )
 
