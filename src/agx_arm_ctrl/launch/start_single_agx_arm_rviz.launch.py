@@ -68,8 +68,14 @@ def generate_launch_description():
 
     speed_percent_arg = DeclareLaunchArgument(
         'speed_percent',
-        default_value='100',
-        description='Movement speed as a percentage of maximum speed.'
+        default_value='0',
+        description='Movement speed percentage; values outside 1-100 leave the SDK default unchanged.'
+    )
+
+    fw_version_arg = DeclareLaunchArgument(
+        'fw_version',
+        default_value='',
+        description='Firmware version in vXXX or vXXXX format; empty means auto-detect.'
     )
 
     pub_rate_arg = DeclareLaunchArgument(
@@ -167,6 +173,7 @@ def generate_launch_description():
             'fast_mode': LaunchConfiguration('fast_mode'),
             'arm_type': LaunchConfiguration('arm_type'),
             'speed_percent': LaunchConfiguration('speed_percent'),
+            'fw_version': LaunchConfiguration('fw_version'),
             'enable_timeout': LaunchConfiguration('enable_timeout'),
             'effector_type': LaunchConfiguration('effector_type'),
             'revo2_type': LaunchConfiguration('revo2_type'),
@@ -186,6 +193,7 @@ def generate_launch_description():
         auto_enable_arg,
         fast_mode_arg,
         speed_percent_arg,
+        fw_version_arg,
         pub_rate_arg,
         enable_timeout_arg,
         tcp_offset_arg,

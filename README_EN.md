@@ -251,13 +251,16 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 | `namespace` | empty string | Arm instance namespace | Any valid ROS namespace |
 | `auto_enable` | `true` | Auto enable on startup | `true`, `false` |
 | `fast_mode` | `false` | Enable fast mode (If enabled, `/control/joint_states` will internally switch to the unsmoothed and non-interpolated `move_js` joint control interface to command the robotic arm.) | `true`, `false` |
-| `speed_percent` | `100` | Motion speed (%) | `0-100` |
+| `speed_percent` | `0` | Motion speed (%); applied only for values from `1-100`, otherwise the SDK default is retained | - |
+| `fw_version` | empty string | Firmware version; auto-detected when empty, otherwise auto-detection is skipped. Use `vXXX` or `vXXXX`, e.g. `v190` or `v1891` | - |
 | `pub_rate` | `200` | Status publish rate (Hz) | - |
 | `enable_timeout` | `5.0` | Enable timeout (seconds) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | Tool Center Point (TCP) offset relative to the flange center [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | The default effort of the gripper (in N) | `>=0.0` |
 | `control_enabled` | `true` | Whether to accept `/control/*` commands. When `false`, control topics are ignored and only feedback is published | `true`, `false` |
 | `log_level` | `info` | Log level | `debug`, `info`, `warn`, `error`, `fatal` |
+
+> **Note:** When the leader and follower arms share the same CAN module, set `fw_version` manually to skip automatic version detection. The leader arm also reports version information, and both arms sending data with the same CAN ID to one module may cause abnormal behavior.
 
 ### URDF Model Visualization
 
