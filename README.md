@@ -251,13 +251,16 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 | `namespace` | 空字符串 | 机械臂实例命名空间 | 任意合法 ROS 命名空间 |
 | `auto_enable` | `true` | 启动时自动使能 | `true`, `false` |
 | `fast_mode` | `false` | 启用快速模式（如果启用，`/control/joint_states` 内部将改用无平滑无插值的 `move_js` 关节控制接口控制机械臂） | `true`, `false` |
-| `speed_percent` | `100` | 运动速度 (%) | `0-100` |
+| `speed_percent` | `0` | 运动速度 (%)；仅在取值为 `1-100` 时设置，否则保持 SDK 默认值 | - |
+| `fw_version` | 空字符串 | 固件版本；为空时自动获取，非空时跳过自动获取。格式为 `vXXX` 或 `vXXXX`，如 `v190`、`v1891` | - |
 | `pub_rate` | `200` | 状态发布频率 (Hz) | - |
 | `enable_timeout` | `5.0` | 使能超时 (秒) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | 工具中心(TCP)相对法兰盘中心的偏移 [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | 夹爪默认力（单位：N） | `>=0.0` |
 | `control_enabled` | `true` | 是否接收 `/control/*` 指令。设为 `false` 时会拒绝控制话题，仅保留反馈发布 | `true`, `false` |
 | `log_level` | `info` | 日志级别 | `debug`, `info`, `warn`, `error`, `fatal` |
+
+> **注意：** 主从臂连接到同一个 CAN 模块时，需要通过 `fw_version` 人工指定固件版本以跳过自动获取；主臂也会返回版本信息，主从臂同时向同一 CAN 模块发送相同 ID 的数据可能导致异常。
 
 ### URDF 模型可视化
 
