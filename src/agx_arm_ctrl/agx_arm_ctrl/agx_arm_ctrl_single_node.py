@@ -19,7 +19,12 @@ from agx_arm_msgs.msg import (
     HandStatus, HandCmd, HandPositionTimeCmd,
     MoveMITMsg
 )
-from agx_arm_ctrl.effector import AgxGripperWrapper, Revo2Wrapper, Revo2TouchWrapper
+from agx_arm_ctrl.effector import (
+    AgxGripperWrapper,
+    Revo2ProWrapper,
+    Revo2TouchWrapper,
+    Revo2Wrapper,
+)
 
 GRIPPER_JOINT_NAME = "gripper"
 
@@ -52,7 +57,7 @@ REVO2_FINGER_POSITION_MAX = {
     "pinky_finger": 100,
 }
 
-REVO2_TOUCH_FINGER_POSITION_MAX = {
+REVO2_BRIDGE_FINGER_POSITION_MAX = {
     "thumb_base": 889,
     "thumb_tip": 478, # 599
     "index_finger": 809,
@@ -267,17 +272,23 @@ class AgxArmRosNode(Node):
             else:
                 self.get_logger().error("Failed to initialize Revo2 hand")
                 self.hand = None
-        elif self.effector_type == "revo2_touch":
-            self.hand = Revo2TouchWrapper(self.agx_arm, hand_side=self.revo2_type)
+        elif self.effector_type in ("revo2_pro", "revo2_touch"):
+            wrapper_class = (
+                Revo2ProWrapper
+                if self.effector_type == "revo2_pro"
+                else Revo2TouchWrapper
+            )
+            hand_name = "Revo2 Pro" if self.effector_type == "revo2_pro" else "Revo2 Touch"
+            self.hand = wrapper_class(self.agx_arm, hand_side=self.revo2_type)
             if self.hand.initialize():
-                self.get_logger().info("Revo2 Touch hand initialized successfully")
+                self.get_logger().info(f"{hand_name} hand initialized successfully")
             else:
-                self.get_logger().error("Failed to initialize Revo2 Touch hand")
+                self.get_logger().error(f"Failed to initialize {hand_name} hand")
                 self.hand = None
 
     def _get_finger_position_max(self, finger_attr: str) -> float:
-        if self.effector_type == "revo2_touch":
-            return float(REVO2_TOUCH_FINGER_POSITION_MAX[finger_attr])
+        if self.effector_type in ("revo2_pro", "revo2_touch"):
+            return float(REVO2_BRIDGE_FINGER_POSITION_MAX[finger_attr])
         return REVO2_FINGER_POSITION_MAX[finger_attr]
 
     def _get_hand_joint_names(self):

@@ -15,7 +15,7 @@
 
 **Supported arm types:** `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` 
 
-**Supported end-effectors:** None (`none`), AgileX Gripper (`agx_gripper`), Revo2 Dexterous Hand (`revo2`, `revo2_touch`)
+**Supported end-effectors:** None (`none`), AgileX Gripper (`agx_gripper`), Revo2 Dexterous Hand (`revo2`, `revo2_pro`, `revo2_touch`)
 
 **Planning groups and preset states:**
 
@@ -23,7 +23,7 @@
 |----------------|-------------|---------------|
 | `arm` | Robot arm body | `home` — zero position |
 | `gripper` | AgileX Gripper (requires `effector_type:=agx_gripper`) | `gripper_open` — fully open<br>`gripper_half` — half open<br>`gripper_close` — fully closed |
-| `hand` | Revo2 / Revo2 Touch dexterous hand (requires `effector_type:=revo2` or `revo2_touch`) | `hand_open` — open<br>`hand_half_close` — half close<br>`hand_close` — fist |
+| `hand` | Revo2 / Revo2 Pro / Revo2 Touch dexterous hand (`effector_type:=revo2` / `revo2_pro` / `revo2_touch`) | `hand_open` — open<br>`hand_half_close` — half close<br>`hand_close` — fist |
 
 ---
 
@@ -201,8 +201,8 @@ ros2 launch agx_arm_moveit demo.launch.py arm_type:=nero effector_type:=revo2 re
 | Parameter | Default | Description | Options |
 |-----------|---------|-------------|---------|
 | `arm_type` | `piper` | Arm model | `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
-| `effector_type` | `none` | End-effector type | `none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch hand side (when `effector_type` is `revo2` or `revo2_touch`) | `left`, `right` |
+| `effector_type` | `none` | End-effector type | `none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch hand side | `left`, `right` |
 | `namespace` | empty string | Namespace for the current MoveIt/control instance (recommended for multi-instance setups) | Any valid ROS namespace |
 | `follow` | `false` | Follow real arm state (`true`: MoveIt subscribes to `feedback_topic`; `false`: subscribes to `control_topic`) | `true`, `false` |
 | `feedback_topic` | `feedback/joint_states` | Joint feedback topic (used when `follow:=true`) | Any valid ROS topic |

@@ -18,7 +18,7 @@ This driver package provides full ROS2 interface support for AgileX series robot
 | TCP Offset Configuration | [tcp_offset](./docs/tcp_offset/TCP_OFFSET_EN.md) |
 | URDF | [URDF](https://github.com/agilexrobotics/agx_arm_urdf) |
 | Moveit| [Moveit](./src/agx_arm_moveit/README_EN.md) |
-| Revo2 Touch (integrated) | `effector_type:=revo2_touch`; see [Dexterous Hand](#dexterous-hand) |
+| Revo2 Pro / Touch (integrated) | `effector_type:=revo2_pro` / `revo2_touch`; see [Dexterous Hand](#dexterous-hand) |
 | Revo2 Touch (standalone ROS pkg) | [agx_brainco_hand_ros](https://github.com/kehuanjack/agx_brainco_hand_ros) |
 | Q&A | [Q&A](./docs/Q&A.md) |
 
@@ -111,7 +111,7 @@ Or install manually by executing the following commands in order:
     pip3 install python-can scipy numpy
     ```
 
-    > If using `effector_type:=revo2_touch`, you also need [bc-stark-sdk](https://pypi.org/project/bc-stark-sdk/).
+    > If using `effector_type:=revo2_pro` or `revo2_touch`, you also need [bc-stark-sdk](https://pypi.org/project/bc-stark-sdk/).
 
 2. CAN tools
 
@@ -200,8 +200,8 @@ You can start the driver using a launch file or by running the node directly.
 > The parameters in the following launch commands **must** be replaced according to your actual hardware configuration:
 > - **`can_port`**: The CAN port connected to the arm, e.g. `can0`.
 > - **`arm_type`**: The arm model, e.g. `piper`.
-> - **`effector_type`**: The end-effector type, e.g. `none`, `agx_gripper`, `revo2`, or `revo2_touch`.
-> - **`revo2_type`**: Revo2 / Revo2 Touch hand side, e.g. `left` or `right` (required when `effector_type` is `revo2` or `revo2_touch`).
+> - **`effector_type`**: The end-effector type, e.g. `none`, `agx_gripper`, `revo2`, `revo2_pro`, or `revo2_touch`.
+> - **`revo2_type`**: Revo2 / Revo2 Pro / Revo2 Touch hand side, e.g. `left` or `right`.
 > - **`tcp_offset`**: Tool Center Point (TCP) offset relative to the flange center, e.g. [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
 >   - Note: All values of this parameter must be floating-point numbers; for TCP offset configuration examples, see [TCP Offset Guide](./docs/tcp_offset/TCP_OFFSET_EN.md).
 >
@@ -246,8 +246,8 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 |-----------|---------|-------------|---------|
 | `can_port` | `can0` | CAN port | - |
 | `arm_type` | `piper` | Arm model | `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
-| `effector_type` | `none` | End-effector type | `none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch hand side (must match URDF joint names and SDK hand side) | `left`, `right` |
+| `effector_type` | `none` | End-effector type | `none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch hand side (must match URDF joint names and SDK hand side) | `left`, `right` |
 | `namespace` | empty string | Arm instance namespace | Any valid ROS namespace |
 | `auto_enable` | `true` | Auto enable on startup | `true`, `false` |
 | `fast_mode` | `false` | Enable fast mode (If enabled, `/control/joint_states` will internally switch to the unsmoothed and non-interpolated `move_js` joint control interface to command the robotic arm.) | `true`, `false` |
@@ -296,8 +296,8 @@ ros2 launch agx_arm_description display.launch.py arm_type:=piper
 |-----------|---------|-------------|
 | `arm_type` | `piper` | Arm model. Presets: `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
 | `custom_model` | empty string | Optional custom model path. If relative, it is resolved under `agx_arm_urdf/`; if absolute, it can point to any URDF/xacro file. When set, `arm_type` and `effector_type` are ignored |
-| `effector_type` | `none` | End-effector type. Presets: `none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch dexterous hand type. Presets: `left`, `right` |
+| `effector_type` | `none` | End-effector type. Presets: `none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch dexterous hand type. Presets: `left`, `right` |
 | `pub_rate` | `200` | Status publish rate (Hz) |
 | `gui` | `true` | Whether to enable the `joint_state_publisher_gui` slider control interface |
 | `rvizconfig` | Built-in config | Absolute path to a custom RViz configuration file |
@@ -435,16 +435,23 @@ cd src/agx_arm_ros
 
 ### Dexterous Hand
 
-Revo2 Touch supports two integration paths—use one according to your setup (do not mix):
+Revo2 Pro / Touch is integrated through pyAgxArm and the wrist tunnel. Revo2 Touch also has a standalone ROS integration; do not mix the two Touch paths:
 
 | Approach | Description |
 |----------|-------------|
-| **Integrated in this repo** | Set `effector_type:=revo2_touch` in launch; `agx_arm_ctrl` + pyAgxArm drives the hand via the wrist tunnel; fingers use `/control/joint_states` only (see below) |
+| **Integrated in this repo** | Set `effector_type:=revo2_pro` or `revo2_touch`; `agx_arm_ctrl` + pyAgxArm drives the hand via the wrist tunnel; fingers use `/control/joint_states` only (see below) |
 | **Standalone ROS package** | Use [agx_brainco_hand_ros](https://github.com/kehuanjack/agx_brainco_hand_ros) to drive the hand separately alongside the arm node |
 
-> **Revo2 vs Revo2 Touch (this repo's `effector_type`):**
+> **Revo2 vs Revo2 Pro vs Revo2 Touch (this repo's `effector_type`):**
 > - **`revo2`**: Supports `/control/hand`, `/control/hand_position_time`, and `/feedback/hand_status`; SDK finger range `[0, 100]`.
+> - **`revo2_pro`**: Uses the pyAgxArm `REVO2_PRO` driver; fingers are controlled only via `/control/joint_states`; SDK finger range `[0, 1000]`; tactile APIs are not supported.
 > - **`revo2_touch`**: pyAgxArm `REVO2_TOUCH` driver (BrainCo Touch); controls fingers **only** via `/control/joint_states`; SDK finger range `[0, 1000]`.
+
+Revo2 Pro launch example:
+
+```bash
+ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:=piper effector_type:=revo2_pro revo2_type:=left
+```
 
 1. Dexterous hand — Position mode (all fingers move to 10, **`revo2` only**)
 
@@ -474,7 +481,7 @@ Revo2 Touch supports two integration paths—use one according to your setup (do
       "$(cat test/hand/test_hand_position_time.yaml)" -1
     ```
 
-5. Dexterous hand control (via `/control/joint_states`, **`revo2` / `revo2_touch`**)
+5. Dexterous hand control (via `/control/joint_states`, **`revo2` / `revo2_pro` / `revo2_touch`**)
 
     ```bash
     ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
@@ -488,7 +495,7 @@ Revo2 Touch supports two integration paths—use one according to your setup (do
       "$(cat test/piper/test_arm_hand_joint_states.yaml)" -1
     ```
 
-> **Note:** Items 1–4 (`/control/hand`, etc.) require `effector_type=revo2`; items 5–6 (`/control/joint_states`) require `effector_type=revo2` or `effector_type=revo2_touch`.
+> **Note:** Items 1–4 (`/control/hand`, etc.) require `effector_type=revo2`; items 5–6 (`/control/joint_states`) support `revo2`, `revo2_pro`, and `revo2_touch`.
 
 ### Service Calls
 
@@ -577,7 +584,7 @@ Revo2 Touch supports two integration paths—use one according to your setup (do
 | `/feedback/arm_status` | `agx_arm_msgs/AgxArmStatus` | Arm status | Always available |
 | `/feedback/leader_joint_states` | `sensor_msgs/JointState` | Leader joint states | Leader arm mode |
 | `/feedback/gripper_status` | `agx_arm_msgs/GripperStatus` | Gripper status | AgxGripper configured |
-| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | Dexterous hand status | `revo2` configured (`revo2_touch` does not publish) |
+| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | Dexterous hand status | `revo2` configured (`revo2_pro` / `revo2_touch` do not publish) |
 
 #### Joint States Details (`/feedback/joint_states`)
 
@@ -599,7 +606,7 @@ Only the `gripper` joint (total opening width, range [0, 0.1] m) is exposed exte
 |------------|------------|------------|----------|
 | `gripper` | Gripper opening width (m), range [0, 0.1] | 0.0 | Force (N) |
 
-**Dexterous Hand Joints** (requires `effector_type=revo2` or `effector_type=revo2_touch`)
+**Dexterous Hand Joints** (supports `effector_type=revo2`, `revo2_pro`, or `revo2_touch`)
 
 Left hand joint names:
 
@@ -766,8 +773,8 @@ Message type: `agx_arm_msgs/HandStatus`
 | `/control/move_c`             | `geometry_msgs/PoseArray`          | Circular motion         | Always available      |
 | `/control/move_js`            | `sensor_msgs/JointState`           | MIT mode joint motion   | Always available      |
 | `/control/move_mit`           | `agx_arm_msgs/MoveMITMsg`          | MIT torque control     | Always available      |
-| `/control/hand`               | `agx_arm_msgs/HandCmd`             | Dexterous hand control        | `revo2` configured (`revo2_touch` not supported)      |
-| `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | Hand position-time control    | `revo2` configured (`revo2_touch` not supported)      |
+| `/control/hand`               | `agx_arm_msgs/HandCmd`             | Dexterous hand control        | `revo2` configured (`revo2_pro` / `revo2_touch` not supported)      |
+| `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | Hand position-time control    | `revo2` configured (`revo2_pro` / `revo2_touch` not supported)      |
 
 #### `/control/joint_states` Details
 
@@ -798,7 +805,7 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
   "{name: [gripper], position: [0.05], velocity: [], effort: [1.5]}" -1
 ```
 
-**Dexterous hand control via `/control/joint_states`** (requires `effector_type=revo2` or `effector_type=revo2_touch`)
+**Dexterous hand control via `/control/joint_states`** (supports `effector_type=revo2`, `revo2_pro`, or `revo2_touch`)
 
 Include dexterous hand joint names in `name`, set the target position via `position` (position mode, unit: rad). Only the joints to be controlled need to be sent; joints not included will maintain their current position.
 
@@ -949,7 +956,7 @@ Message type: `agx_arm_msgs/HandPositionTimeCmd`
 
 > ⚠️ Values out of range will be rejected (not executed), and the node will output a warning log. For example: when sending position=120, the command will not be executed, and a warning `position must be in range [0, 100], current value: 120` will be output.
 
-### Dexterous Hand (Revo2 Touch)
+### Dexterous Hand (Revo2 Pro / Touch)
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -963,7 +970,7 @@ Message type: `agx_arm_msgs/HandPositionTimeCmd`
 | `thumb_tip` (Thumb) | 478 |
 | `index_finger` ~ `pinky_finger` | 809 |
 
-> ⚠️ SDK commands outside `[0, 1000]` are rejected by `Revo2TouchWrapper`.
+> ⚠️ SDK commands outside `[0, 1000]` are rejected by `Revo2ProWrapper` / `Revo2TouchWrapper`.
 
 ---
 

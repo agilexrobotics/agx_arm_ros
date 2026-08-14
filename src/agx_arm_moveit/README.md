@@ -15,7 +15,7 @@
 
 **支持的臂型：** `nero`、`piper`、`piper_h`、`piper_l`、`piper_x`、
 
-**支持的末端执行器：** 无末端执行器 (`none`)、AgileX 夹爪 (`agx_gripper`)、Revo2 灵巧手 (`revo2`, `revo2_touch`)
+**支持的末端执行器：** 无末端执行器 (`none`)、AgileX 夹爪 (`agx_gripper`)、Revo2 灵巧手 (`revo2`, `revo2_pro`, `revo2_touch`)
 
 **规划组与预设动作：**
 
@@ -23,7 +23,7 @@
 |--------|------|----------|
 | `arm` | 机械臂主体 | `home` — 零位姿态 |
 | `gripper` | AgileX 夹爪（需 `effector_type:=agx_gripper`） | `gripper_open` — 完全张开<br>`gripper_half` — 半开<br>`gripper_close` — 完全闭合 |
-| `hand` | Revo2 / Revo2 Touch 灵巧手（需 `effector_type:=revo2` 或 `revo2_touch`） | `hand_open` — 张开<br>`hand_half_close` — 半握<br>`hand_close` — 握拳 |
+| `hand` | Revo2 / Revo2 Pro / Revo2 Touch 灵巧手（`effector_type:=revo2` / `revo2_pro` / `revo2_touch`） | `hand_open` — 张开<br>`hand_half_close` — 半握<br>`hand_close` — 握拳 |
 
 ---
 
@@ -199,8 +199,8 @@ ros2 launch agx_arm_moveit demo.launch.py arm_type:=nero effector_type:=revo2 re
 | 参数 | 默认值 | 说明 | 可选值 |
 |------|--------|------|--------|
 | `arm_type` | `piper` | 机械臂型号 | `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
-| `effector_type` | `none` | 末端执行器类型 | `none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch 左右手（`effector_type` 为 `revo2` 或 `revo2_touch` 时） | `left`, `right` |
+| `effector_type` | `none` | 末端执行器类型 | `none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch 左右手 | `left`, `right` |
 | `namespace` | 空字符串 | 当前 MoveIt/控制实例命名空间（多实例推荐设置） | 任意合法 ROS 命名空间 |
 | `follow` | `false` | 跟随真实机械臂状态（`true` 时 MoveIt 订阅 `feedback_topic`；`false` 时订阅 `control_topic`） | `true`, `false` |
 | `feedback_topic` | `feedback/joint_states` | 反馈关节状态话题（`follow:=true` 时使用） | 任意合法 ROS topic |

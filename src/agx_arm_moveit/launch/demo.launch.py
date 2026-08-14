@@ -69,7 +69,7 @@ def _build_ros2_controllers_file(arm_type, effector_type, revo2_type, namespace)
                 "state_interfaces": ["position", "velocity"],
             },
         }
-    elif effector_type == "revo2":
+    elif effector_type in ("revo2", "revo2_pro", "revo2_touch"):
         side = revo2_type
         ctrl_name = f"{side}_hand_controller"
         cm_controllers[ctrl_name] = {
@@ -249,7 +249,7 @@ def generate_launch_description():
                 "revo2_type",
                 default_value="left",
                 choices=ALL_REVO2_TYPES,
-                description="Revo2 / Revo2 Touch hand side (when effector_type is revo2 or revo2_touch).",
+                description="Revo2 / Revo2 Pro / Revo2 Touch hand side.",
             ),
             DeclareLaunchArgument(
                 "tcp_offset",

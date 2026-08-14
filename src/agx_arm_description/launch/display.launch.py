@@ -47,7 +47,7 @@ def _resolve_custom_model_path(pkg_path, custom_model):
 def _resolve_builtin_model_path(arm_type, effector_type, revo2_type, pkg_path):
     if effector_type == 'agx_gripper':
         relative_path = ROBOT_WITH_GRIPPER_URDF_MAP[arm_type]
-    elif effector_type == 'revo2':
+    elif effector_type in ('revo2', 'revo2_pro', 'revo2_touch'):
         relative_path = ROBOT_WITH_REVO2_URDF_MAP[arm_type][revo2_type]
     else:
         relative_path = ROBOT_URDF_MAP[arm_type]
@@ -207,14 +207,14 @@ def generate_launch_description():
     effector_type_arg = DeclareLaunchArgument(
         name='effector_type',
         default_value='none',
-        choices=['none', 'agx_gripper', 'revo2'],
-        description='End effector type (e.g. agx_gripper, revo2).'
+        choices=['none', 'agx_gripper', 'revo2', 'revo2_pro', 'revo2_touch'],
+        description='End effector type (e.g. agx_gripper, revo2, revo2_pro, revo2_touch).'
     )
     revo2_type_arg = DeclareLaunchArgument(
         'revo2_type',
         default_value='left',
         choices=['left', 'right'],
-        description='Revo2 / Revo2 Touch hand side (left or right).',
+        description='Revo2 / Revo2 Pro / Revo2 Touch hand side (left or right).',
     )
     pub_rate_arg = DeclareLaunchArgument(
         'pub_rate',

@@ -18,7 +18,7 @@
 |TCP偏移设置|[tcp_offset](./docs/tcp_offset/TCP_OFFSET.md)|
 |URDF|[URDF](https://github.com/agilexrobotics/agx_arm_urdf)|
 |Moveit| [Moveit](./src/agx_arm_moveit/README.md) |
-|Revo2 Touch（本仓库集成）| `effector_type:=revo2_touch`，见 [灵巧手](#hand-灵巧手) |
+|Revo2 Pro / Touch（本仓库集成）| `effector_type:=revo2_pro` / `revo2_touch`，见 [灵巧手](#hand-灵巧手) |
 |Revo2 Touch（独立 ROS 包）|[agx_brainco_hand_ros](https://github.com/kehuanjack/agx_brainco_hand_ros) |
 |Q&A|[Q&A](./docs/Q&A.md)|
 
@@ -111,7 +111,7 @@ bash ./agx_arm_install_deps.sh
     pip3 install python-can scipy numpy
     ```
 
-    > 若使用 `effector_type:=revo2_touch`，还需安装 [bc-stark-sdk](https://pypi.org/project/bc-stark-sdk/)。
+    > 若使用 `effector_type:=revo2_pro` 或 `revo2_touch`，还需安装 [bc-stark-sdk](https://pypi.org/project/bc-stark-sdk/)。
 
 2. CAN 工具
 
@@ -200,8 +200,8 @@ bash can_activate.sh
 > 以下启动命令中的参数**必须**根据您的实际硬件配置进行替换：
 > - **`can_port`**：机械臂连接的 CAN 端口，示例值 `can0`。
 > - **`arm_type`**：机械臂的型号，示例值 `piper`。
-> - **`effector_type`**：末端执行器类型，示例值 `none`、`agx_gripper`、`revo2` 或 `revo2_touch`。
-> - **`revo2_type`**：Revo2 / Revo2 Touch 左右手，示例值 `left` 或 `right`（仅 `effector_type` 为 `revo2` / `revo2_touch` 时需要）。
+> - **`effector_type`**：末端执行器类型，示例值 `none`、`agx_gripper`、`revo2`、`revo2_pro` 或 `revo2_touch`。
+> - **`revo2_type`**：Revo2 / Revo2 Pro / Revo2 Touch 左右手，示例值 `left` 或 `right`。
 > - **`tcp_offset`**：工具中心（TCP）相对法兰盘中心的偏移量，示例值：[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 >   - 注意 ：`tcp_offset` 所有值均需为浮点数；关于 TCP 偏移实际配置示例，请参考 [TCP 设置详解](./docs/tcp_offset/TCP_OFFSET.md)。
 >
@@ -246,8 +246,8 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 |------|--------|------|--------|
 | `can_port` | `can0` | CAN 端口 | - |
 | `arm_type` | `piper` | 机械臂型号 | `nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
-| `effector_type` | `none` | 末端执行器类型 | `none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch 左右手（与 URDF 关节名、SDK 手侧一致） | `left`, `right` |
+| `effector_type` | `none` | 末端执行器类型 | `none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch 左右手（与 URDF 关节名、SDK 手侧一致） | `left`, `right` |
 | `namespace` | 空字符串 | 机械臂实例命名空间 | 任意合法 ROS 命名空间 |
 | `auto_enable` | `true` | 启动时自动使能 | `true`, `false` |
 | `fast_mode` | `false` | 启用快速模式（如果启用，`/control/joint_states` 内部将改用无平滑无插值的 `move_js` 关节控制接口控制机械臂） | `true`, `false` |
@@ -296,8 +296,8 @@ ros2 launch agx_arm_description display.launch.py arm_type:=piper
 |------|--------|------|
 | `arm_type` | `piper` | 机械臂型号，预设值：`nero`, `piper`, `piper_h`, `piper_l`, `piper_x` |
 | `custom_model` | 空字符串 | 可选自定义模型路径；相对路径时相对于 `agx_arm_urdf/` 目录，绝对路径可指向任意 URDF/xacro 文件。若设置该参数，则 `arm_type` 和 `effector_type` 将被忽略 |
-| `effector_type` | `none` | 末端执行器类型，预设值：`none`, `agx_gripper`, `revo2`, `revo2_touch` |
-| `revo2_type` | `left` | Revo2 / Revo2 Touch 灵巧手类型，预设值：`left`, `right` |
+| `effector_type` | `none` | 末端执行器类型，预设值：`none`, `agx_gripper`, `revo2`, `revo2_pro`, `revo2_touch` |
+| `revo2_type` | `left` | Revo2 / Revo2 Pro / Revo2 Touch 灵巧手类型，预设值：`left`, `right` |
 | `pub_rate` | `200` | 状态发布频率 (Hz) |
 | `gui` | `true` | 是否启用 joint_state_publisher_gui 关节滑条控制界面 |
 | `rvizconfig` | 内置配置 | 自定义 RViz 配置文件的绝对路径 |
@@ -437,16 +437,23 @@ cd src/agx_arm_ros
 
 ### Hand 灵巧手
 
-Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
+Revo2 Pro / Touch 通过 pyAgxArm 和腕部隧道集成到本仓库。Revo2 Touch 另有独立 ROS 包接入方式，两种 Touch 方案请勿混用：
 
 | 方式 | 说明 |
 |------|------|
-| **本仓库集成** | launch 设 `effector_type:=revo2_touch`，由 `agx_arm_ctrl` + pyAgxArm 经腕部隧道驱动；手指仅走 `/control/joint_states`（见下文） |
+| **本仓库集成** | launch 设 `effector_type:=revo2_pro` 或 `revo2_touch`，由 `agx_arm_ctrl` + pyAgxArm 经腕部隧道驱动；手指仅走 `/control/joint_states`（见下文） |
 | **独立 ROS 包** | 使用 [agx_brainco_hand_ros](https://github.com/kehuanjack/agx_brainco_hand_ros) 单独驱动灵巧手，与臂节点并行运行 |
 
-> **Revo2 与 Revo2 Touch（本仓库 `effector_type`）区别：**
+> **Revo2、Revo2 Pro 与 Revo2 Touch（本仓库 `effector_type`）区别：**
 > - **`revo2`**：支持 `/control/hand`、`/control/hand_position_time` 及 `/feedback/hand_status`；手指 SDK 量程 `[0, 100]`。
+> - **`revo2_pro`**：经 pyAgxArm `REVO2_PRO` 驱动，仅通过 `/control/joint_states` 控制手指；手指 SDK 量程 `[0, 1000]`，不支持触觉。
 > - **`revo2_touch`**：经 pyAgxArm `REVO2_TOUCH` 驱动（BrainCo Touch），**仅**通过 `/control/joint_states` 控制手指；手指 SDK 量程 `[0, 1000]`。
+
+Revo2 Pro 启动示例：
+
+```bash
+ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:=piper effector_type:=revo2_pro revo2_type:=left
+```
 
 1. 灵巧手 — 位置模式（所有手指移动到 10，**仅 `revo2`**）
 
@@ -476,7 +483,7 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
       "$(cat test/hand/test_hand_position_time.yaml)" -1
     ```
 
-5. 灵巧手控制（通过 `/control/joint_states` 控制，**`revo2` / `revo2_touch`**）
+5. 灵巧手控制（通过 `/control/joint_states` 控制，**`revo2` / `revo2_pro` / `revo2_touch`**）
 
     ```bash
     ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
@@ -490,7 +497,7 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
       "$(cat test/piper/test_arm_hand_joint_states.yaml)" -1
     ```
 
-> **注意：** 第 1–4 条（`/control/hand` 等）需 `effector_type=revo2`；第 5–6 条（`/control/joint_states`）需 `effector_type=revo2` 或 `effector_type=revo2_touch`。
+> **注意：** 第 1–4 条（`/control/hand` 等）需 `effector_type=revo2`；第 5–6 条（`/control/joint_states`）支持 `revo2`、`revo2_pro` 和 `revo2_touch`。
 
 ### 服务调用
 
@@ -579,7 +586,7 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
 | `/feedback/arm_status` | `agx_arm_msgs/AgxArmStatus` | 机械臂状态 | 始终可用 |
 | `/feedback/leader_joint_states` | `sensor_msgs/JointState` | 主导臂关节状态 | 主导臂模式 |
 | `/feedback/gripper_status` | `agx_arm_msgs/GripperStatus` | 夹爪状态 | 配置 AgxGripper |
-| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | 灵巧手状态 | 配置 `revo2`（`revo2_touch` 不发布） |
+| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | 灵巧手状态 | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不发布） |
 
 #### `/feedback/joint_states` 详细说明
 
@@ -601,7 +608,7 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
 |--------|-----------------|------------|----------|
 | `gripper` | 夹爪开口宽度 (m)，范围 [0, 0.1] | 0.0 | 力 (N) |
 
-**灵巧手关节**（需配置 `effector_type=revo2` 或 `effector_type=revo2_touch`）
+**灵巧手关节**（支持 `effector_type=revo2`、`revo2_pro` 或 `revo2_touch`）
 
 左手关节命名：
 
@@ -768,8 +775,8 @@ Revo2 Touch 有两种接入方式，请按实际方案选用（勿混用）：
 | `/control/move_c`             | `geometry_msgs/PoseArray`          | 圆弧运动         | 始终可用      |
 | `/control/move_js`            | `sensor_msgs/JointState`           | MIT 模式关节运动   | 始终可用      |
 | `/control/move_mit`           | `agx_arm_msgs/MoveMITMsg`          | MIT 力矩控制     | 始终可用      |
-| `/control/hand`               | `agx_arm_msgs/HandCmd`             | 灵巧手控制        | 配置 `revo2`（`revo2_touch` 不支持）      |
-| `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | 灵巧手位置时间控制    | 配置 `revo2`（`revo2_touch` 不支持）      |
+| `/control/hand`               | `agx_arm_msgs/HandCmd`             | 灵巧手控制        | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不支持）      |
+| `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | 灵巧手位置时间控制    | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不支持）      |
 
 #### `/control/joint_states` 详细说明
 
@@ -800,7 +807,7 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
   "{name: [gripper], position: [0.05], velocity: [], effort: [1.5]}" -1
 ```
 
-**通过 `/control/joint_states` 控制灵巧手**（需配置 `effector_type=revo2` 或 `effector_type=revo2_touch`）
+**通过 `/control/joint_states` 控制灵巧手**（支持 `effector_type=revo2`、`revo2_pro` 或 `revo2_touch`）
 
 在 `name` 中包含灵巧手关节名，通过 `position` 设置目标位置（position 模式, 单位: rad）。仅需发送要控制的关节，未包含的关节将保持当前位置。
 
@@ -951,7 +958,7 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
 
 > ⚠️ 超出范围的值将被拒绝（不执行），节点输出警告日志。例如：发送 position=120 时，该指令不会执行，并输出 `position must be in range [0, 100], current value: 120` 警告。
 
-### 灵巧手 (Revo2 Touch)
+### 灵巧手 (Revo2 Pro / Touch)
 
 | 参数 | 范围 | 说明 |
 |------|------|------|
@@ -965,7 +972,7 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
 | `thumb_tip` (Thumb) | 478 |
 | `index_finger` ~ `pinky_finger` | 809 |
 
-> ⚠️ 超出 `[0, 1000]` 的 SDK 指令将被 `Revo2TouchWrapper` 拒绝。
+> ⚠️ 超出 `[0, 1000]` 的 SDK 指令将被 `Revo2ProWrapper` / `Revo2TouchWrapper` 拒绝。
 
 ---
 
