@@ -6,7 +6,13 @@ import math
 import re
 import threading
 from typing import Optional
-from pyAgxArm import create_agx_arm_config, AgxArmFactory, ArmModel, PiperFW, NeroFW
+from pyAgxArm import (
+    create_agx_arm_config,
+    AgxArmFactory,
+    ArmModel,
+    PiperFW,
+    resolve_firmware_profile,
+)
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from builtin_interfaces.msg import Time
@@ -131,6 +137,12 @@ class AgxArmRosNode(Node):
         self.gripper_default_effort = self.get_parameter("gripper_default_effort").value
         self.control_enabled = self.get_parameter("control_enabled").value
 
+        if self.arm_type not in ArmModel.__dict__.values():
+            self.get_logger().error(
+                f"Unsupported arm_type '{self.arm_type}', expected one of {list(ArmModel.__dict__.values())}."
+            )
+            exit(1)
+
         if self.fw_version and not re.fullmatch(r"v\d{3,4}", self.fw_version):
             self.get_logger().error(
                 "fw_version must use v followed by 3 or 4 digits, "
@@ -138,11 +150,13 @@ class AgxArmRosNode(Node):
             )
             exit(1)
 
-        if self.arm_type not in ArmModel.__dict__.values():
-            self.get_logger().error(
-                f"Unsupported arm_type '{self.arm_type}', expected one of {list(ArmModel.__dict__.values())}."
+        self.firmware_version = None
+        self.firmware_profile = None
+        if self.fw_version:
+            self.firmware_version = self._expand_fw_version(self.fw_version)
+            self.firmware_profile = self._resolve_firmware_profile(
+                self.firmware_version
             )
-            exit(1)
 
         if self.gripper_default_effort < 0:
             self.get_logger().warn(
@@ -171,7 +185,7 @@ class AgxArmRosNode(Node):
         if 0 < self.speed_percent <= 100:
             self.get_logger().info(f"speed_percent: {self.speed_percent}")
         if self.fw_version:
-            self.get_logger().info(f"fw_version: {self.fw_version}")
+            self.get_logger().info(f"fw_version: {self.fw_version}, {self.firmware_version}, {self.firmware_profile}")
         self.get_logger().info(f"pub_rate: {self.pub_rate}")
         self.get_logger().info(f"enable_timeout: {self.enable_timeout}")
         self.get_logger().info(f"effector_type: {self.effector_type}")
@@ -182,9 +196,15 @@ class AgxArmRosNode(Node):
         self.get_logger().info(f"control_enabled: {self.control_enabled}")
 
     def _init_agx_arm(self):
-        config: PiperCanDefaultConfig = create_agx_arm_config(
-            robot=self.arm_type, comm="can", channel=self.can_port
-        )
+        config_kwargs = {
+            "robot": self.arm_type,
+            "comm": "can",
+            "channel": self.can_port,
+        }
+        if self.firmware_profile is not None:
+            config_kwargs["firmeware_version"] = self.firmware_profile
+
+        config: PiperCanDefaultConfig = create_agx_arm_config(**config_kwargs)
         self.agx_arm = AgxArmFactory.create_arm(config)
         self.agx_arm.connect()
 
@@ -198,12 +218,7 @@ class AgxArmRosNode(Node):
             time.sleep(0.1)
             self.enable_flag = self.agx_arm.get_joint_enable_status(255)
 
-        if self.fw_version:
-            compact_version = self.fw_version[1:]
-            current_version = float(
-                f"{compact_version[:3]}.{compact_version[3:] or '0'}"
-            )
-        else:
+        if self.firmware_version is None:
             firmware = None
             start_time = time.time()
             while time.time() - start_time < self.enable_timeout:
@@ -216,36 +231,26 @@ class AgxArmRosNode(Node):
                 self.get_logger().error("Failed to get firmware version")
                 exit(1)
 
-            firmware_version = firmware["software_version"]
-            version_parts = re.findall(r"\d+", firmware_version)
-            if not version_parts:
-                self.get_logger().error(f"Invalid firmware version: {firmware_version}")
-                exit(1)
-            compact_version = "".join(version_parts)
-            self.get_logger().info(f"fw_version: v{compact_version}")
-            current_version = float(
-                f"{compact_version[:3]}.{compact_version[3:] or '0'}"
+            self.firmware_version = firmware["software_version"]
+            self.firmware_profile = self._resolve_firmware_profile(
+                self.firmware_version
+            )
+            self.get_logger().info(f"fw_version: {self.firmware_profile}, {self.firmware_version}, {self.firmware_profile}")
+
+        if self.is_piper:
+            self.is_switch_seamlessly = not (
+                self.firmware_profile == PiperFW.DEFAULT
+                or (
+                    self.firmware_profile == PiperFW.V183
+                    and int(self.firmware_version.rsplit("-", 1)[1]) < 5
+                )
             )
 
-        firmeware_version = PiperFW.DEFAULT
-        if self.is_piper:
-            if current_version < 185:
-                self.is_switch_seamlessly = False
-            if 182 < current_version < 188:
-                firmeware_version = PiperFW.V183
-            elif current_version >= 188:
-                firmeware_version = PiperFW.V188
-        elif self.is_nero:
-            if 111 <= current_version < 112:
-                firmeware_version = NeroFW.V111
-            elif current_version >= 112:
-                firmeware_version = NeroFW.V112
-
-        if firmeware_version != PiperFW.DEFAULT:
+        if not self.fw_version and self.firmware_profile != PiperFW.DEFAULT:
             self.agx_arm.disconnect()
             config = create_agx_arm_config(
                 robot=self.arm_type, comm="can", channel=self.can_port,
-                firmeware_version=firmeware_version
+                firmeware_version=self.firmware_profile
             )
             self.agx_arm = AgxArmFactory.create_arm(config)
             self.agx_arm.connect()
@@ -253,6 +258,22 @@ class AgxArmRosNode(Node):
         if 0 < self.speed_percent <= 100:
             self.agx_arm.set_speed_percent(self.speed_percent)
         self.agx_arm.set_tcp_offset(self.tcp_offset)
+
+    def _resolve_firmware_profile(self, firmware_version):
+        try:
+            return resolve_firmware_profile(self.arm_type, firmware_version)
+        except (TypeError, ValueError) as exc:
+            self.get_logger().error(str(exc))
+            exit(1)
+
+    def _expand_fw_version(self, firmware_version):
+        compact_version = firmware_version[1:]
+        if "piper" in self.arm_type:
+            return (
+                f"S-V{compact_version[0]}.{compact_version[1]}-"
+                f"{compact_version[2]}"
+            )
+        return f"{compact_version[0]}.{compact_version[1:]}"
 
     def _init_effector(self):
         self.gripper: Optional[AgxGripperWrapper] = None
