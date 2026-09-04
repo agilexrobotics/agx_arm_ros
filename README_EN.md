@@ -531,7 +531,7 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 
     > **⚠️ Important Safety Note:** 
     > 1. After executing this command, the robotic arm will first perform a homing operation and then restart automatically; there is a risk of falling during this process. It is recommended to gently hold the robotic arm after homing to prevent damage from falling.
-    > 2. For Piper series robotic arms with firmware version 1.8.5 and above, the seamless mode switching feature is supported. There is no need to execute the above service command to exit teach mode, as the system will complete the mode switch automatically, avoiding the aforementioned fall risk.
+    > 2. This service is only provided on firmware without seamless switching (Piper below 1.8.5); Piper 1.8.5 and above switch modes seamlessly and do not need this service. If the arm is neither in teach mode nor in MIT mode when called, it only reports that and takes no action.
 
 ### Status Subscription
 
@@ -773,8 +773,13 @@ Message type: `agx_arm_msgs/HandStatus`
 | `/control/move_c`             | `geometry_msgs/PoseArray`          | Circular motion         | Always available      |
 | `/control/move_js`            | `sensor_msgs/JointState`           | MIT mode joint motion   | Always available      |
 | `/control/move_mit`           | `agx_arm_msgs/MoveMITMsg`          | MIT torque control     | Always available      |
+| `/control/move_cpv`           | `sensor_msgs/JointState`           | CPV mode joint motion | On supported firmware (e.g. Nero v112+) |
 | `/control/hand`               | `agx_arm_msgs/HandCmd`             | Dexterous hand control        | `revo2` configured (`revo2_pro` / `revo2_touch` not supported)      |
 | `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | Hand position-time control    | `revo2` configured (`revo2_pro` / `revo2_touch` not supported)      |
+
+> **Notes**
+> - Every `sensor_msgs/JointState` control topic (`/control/joint_states`, `/control/move_j`, `/control/move_js`, `/control/move_cpv`) can carry end-effector joints (`gripper` / Revo2 hand): the arm joints run the corresponding motion and the end effector is controlled from `position`/`effort`. Joints not included are unaffected.
+> - On a link interruption (CAN disconnected / power loss) the driver logs `Agx_arm feedback lost`; once feedback recovers it logs `Agx_arm feedback recovered` and tries to re-enable the arm, waiting for the low-speed feedback to refresh first so it does not trust the stale enable cache.
 
 #### `/control/joint_states` Details
 

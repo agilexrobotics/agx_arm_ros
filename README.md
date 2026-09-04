@@ -533,7 +533,7 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 
     > **⚠️ 重要安全提示:** 
     > 1. 执行该指令后，机械臂会先执行回零位操作，随后自动重启；此过程中机械臂存在坠落风险，建议在回零位完成后用手轻扶机械臂，防止坠落损坏。
-    > 2. Piper 系列机器臂若固件版本为 1.8.5 及以上，已支持 模式无缝切换 功能，无需执行上述退出示教模式的服务指令，系统会自动完成模式切换，可规避上述坠落风险。
+    > 2. 该服务仅在非无缝切换固件（Piper 1.8.5 以下）下提供；Piper 1.8.5 及以上已支持模式无缝切换，无需调用此服务，系统会自动完成模式切换。调用时若机械臂既不处于示教模式也不处于 MIT 模式，仅提示未处于示教模式、不会执行动作。
 
 ### 状态订阅
 
@@ -775,8 +775,13 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 | `/control/move_c`             | `geometry_msgs/PoseArray`          | 圆弧运动         | 始终可用      |
 | `/control/move_js`            | `sensor_msgs/JointState`           | MIT 模式关节运动   | 始终可用      |
 | `/control/move_mit`           | `agx_arm_msgs/MoveMITMsg`          | MIT 力矩控制     | 始终可用      |
+| `/control/move_cpv`           | `sensor_msgs/JointState`           | CPV 模式关节运动 | 随固件支持（如 Nero v112+） |
 | `/control/hand`               | `agx_arm_msgs/HandCmd`             | 灵巧手控制        | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不支持）      |
 | `/control/hand_position_time` | `agx_arm_msgs/HandPositionTimeCmd` | 灵巧手位置时间控制    | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不支持）      |
+
+> **说明**
+> - 所有 `sensor_msgs/JointState` 类型的控制话题（`/control/joint_states`、`/control/move_j`、`/control/move_js`、`/control/move_cpv`）均可携带末端执行器关节（`gripper` / Revo2 手关节）：臂关节执行对应运动，末端按 `position`/`effort` 同步控制。未包含的关节不受影响。
+> - 通讯中断（CAN 断开/断电）时驱动会提示 `Agx_arm feedback lost`;反馈恢复后提示 `Agx_arm feedback recovered` 并尝试重新使能,使能前会等待低速反馈刷新,避免读到旧的使能缓存。
 
 #### `/control/joint_states` 详细说明
 

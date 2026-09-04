@@ -173,6 +173,7 @@ class AgxArmRosNode(Node):
         self.enable_flag = False
         self.control_ready = False
         self._control_ready_logged = False
+        self.cpv_cv_configured_joints = set()
         self.arm_joint_names = list()
         self.arm_joint_count = 0
         self._control_gate_block_logged = False
@@ -367,6 +368,10 @@ class AgxArmRosNode(Node):
         self.create_subscription(
             JointState, "control/move_js", self._move_js_callback, 1
         )
+        if hasattr(self.agx_arm, "move_cpv_pos"):
+            self.create_subscription(
+                JointState, "control/move_cpv", self._move_cpv_callback, 1
+            )
         self.create_subscription(
             MoveMITMsg, "control/move_mit", self._move_mit_callback, 1
         )
@@ -426,11 +431,6 @@ class AgxArmRosNode(Node):
                 self._control_gate_block_logged = True
             return False
         self._control_gate_block_logged = False
-        if not self.is_switch_seamlessly:
-            arm_status = self.agx_arm.get_arm_status()
-            if arm_status is not None and arm_status.msg.ctrl_mode == self.agx_arm.ARM_STATUS.CtrlMode.TEACHING_MODE:
-                self.get_logger().warn("Agx_arm is in teach mode, cannot control")
-                return False
         return True
 
     def _create_pose_cmd(self, pose: Pose) -> list:
@@ -466,9 +466,21 @@ class AgxArmRosNode(Node):
             time.sleep(poll_interval)
 
     def _enable_arm(self, enable: bool = True, timeout: float = 5.0) -> bool:
-        start_time = time.time()
         action_name = "enable" if enable else "disable"
-        
+
+        if enable:
+            wait_start = time.time()
+            while time.time() - wait_start < timeout * 6:
+                state = self.agx_arm.get_driver_states(1)
+                if state is not None and getattr(state, "hz", 0) > 0:
+                    break
+                time.sleep(0.2)
+            else:
+                self.get_logger().warn(
+                    "Timed out waiting for low-speed feedback before enabling"
+                )
+        start_time = time.time()
+
         while not (self.agx_arm.enable() if enable else self.agx_arm.disable()):
             if time.time() - start_time > timeout:
                 self.get_logger().error(
@@ -493,11 +505,25 @@ class AgxArmRosNode(Node):
     ### publisher thread
     def _publish_thread(self):
         rate = self.create_rate(self.pub_rate)
+        feedback_alive = True
 
         # publishing loop
         while rclpy.ok():
             if self.agx_arm.is_ok():
-                if not self.control_ready and self._check_arm_ready():
+                if not feedback_alive:
+                    feedback_alive = True
+                    self.get_logger().info("Agx_arm feedback recovered, restoring state")
+                    if self.enable_flag:
+                        self.get_logger().info("Re-enabling the arm after feedback recovery")
+                        for attempt in range(1, 6):
+                            if self._enable_arm(True, timeout=self.enable_timeout):
+                                break
+                            self.get_logger().warn(
+                                f"Arm enable attempt {attempt} failed, retrying in 1 s"
+                            )
+                            time.sleep(1.0)
+                    self._control_gate_block_logged = False
+                if not self.control_ready:
                     self.control_ready = True
                     if not self._control_ready_logged:
                         self.get_logger().info("Agx_arm feedback is ready, control is now enabled")
@@ -507,8 +533,14 @@ class AgxArmRosNode(Node):
                 self._publish_arm_status()
                 self._publish_effector_status()
                 self._publish_leader_joint_states()
+            else:
+                if feedback_alive:
+                    feedback_alive = False
+                    self.get_logger().warn("Agx_arm feedback lost")
+                    self.cpv_cv_configured_joints.clear()
+                    self.control_ready = False
             rate.sleep()
-    
+
     ### publish methods
     def _get_gripper_joint_data(self):
         if self.gripper is None or not self.gripper.is_ok():
@@ -776,11 +808,22 @@ class AgxArmRosNode(Node):
             return
 
         joint_pos = {}
+        joint_effort = {}
         for idx, joint_name in enumerate(msg.name):
             joint_pos[joint_name] = self._safe_get_value(msg.position, idx)
-        joints = [joint_pos.get(i, 0) for i in self.arm_joint_names]
-        self.agx_arm.move_j(joints)
-        self.is_mit_mode = False
+            joint_effort[joint_name] = self._safe_get_value(msg.effort, idx)
+
+        arm_joints = {
+            name: value
+            for name, value in joint_pos.items()
+            if name in self.arm_joint_names
+        }
+        if arm_joints:
+            joints = [arm_joints.get(name, 0) for name in self.arm_joint_names]
+            self.agx_arm.move_j(joints)
+            self.is_mit_mode = False
+        self._control_gripper_joint(joint_pos, joint_effort)
+        self._control_hand_joints(joint_pos)
 
     def _move_p_callback(self, msg: PoseStamped):
         if not self._check_can_control():
@@ -818,11 +861,76 @@ class AgxArmRosNode(Node):
             return
 
         joint_pos = {}
+        joint_effort = {}
         for idx, joint_name in enumerate(msg.name):
             joint_pos[joint_name] = self._safe_get_value(msg.position, idx)
-        joints = [joint_pos.get(i, 0) for i in self.arm_joint_names]
-        self.agx_arm.move_js(joints)
-        self.is_mit_mode = True
+            joint_effort[joint_name] = self._safe_get_value(msg.effort, idx)
+
+        arm_joints = {
+            name: value
+            for name, value in joint_pos.items()
+            if name in self.arm_joint_names
+        }
+        if arm_joints:
+            joints = [arm_joints.get(name, 0) for name in self.arm_joint_names]
+            self.agx_arm.move_js(joints)
+            self.is_mit_mode = True
+        self._control_gripper_joint(joint_pos, joint_effort)
+        self._control_hand_joints(joint_pos)
+
+    def _ensure_cpv_joint_velocity(self, joint_index: int) -> bool:
+        """Configure CPV contour velocity for a single joint when unset."""
+        if joint_index in self.cpv_cv_configured_joints:
+            return True
+
+        try:
+            contour_velocity = self.agx_arm.get_cpv_cv(joint_index)
+            if contour_velocity:
+                self.cpv_cv_configured_joints.add(joint_index)
+                return True
+            limits = self.agx_arm.get_joint_angle_vel_limits(joint_index)
+            max_speed = None
+            if limits is not None and limits.msg is not None:
+                max_speed = limits.msg.max_joint_spd
+            if max_speed:
+                if not self.agx_arm.set_cpv_cv(joint_index, max_speed):
+                    self.get_logger().warn(
+                        f"Failed to set CPV contour velocity for joint "
+                        f"{joint_index}"
+                    )
+        except Exception as e:
+            self.get_logger().error(
+                f"Failed to configure CPV contour velocity for joint "
+                f"{joint_index}: {e}"
+            )
+        self.cpv_cv_configured_joints.add(joint_index)
+        return True
+
+    def _move_cpv_callback(self, msg: JointState):
+        if not self._check_can_control():
+            return
+
+        joint_pos = {}
+        joint_effort = {}
+        for idx, joint_name in enumerate(msg.name):
+            joint_pos[joint_name] = self._safe_get_value(msg.position, idx)
+            joint_effort[joint_name] = self._safe_get_value(msg.effort, idx)
+
+        arm_joints = {
+            name: value
+            for name, value in joint_pos.items()
+            if name in self.arm_joint_names
+        }
+        for joint_index, name in enumerate(self.arm_joint_names, start=1):
+            if name not in arm_joints:
+                continue
+            if not self._ensure_cpv_joint_velocity(joint_index):
+                return
+            self.agx_arm.move_cpv_pos(joint_index, arm_joints[name])
+        if arm_joints:
+            self.is_mit_mode = False
+        self._control_gripper_joint(joint_pos, joint_effort)
+        self._control_hand_joints(joint_pos)
 
     def _move_mit_callback(self, msg: MoveMITMsg):
         if not self._check_can_control():
@@ -933,12 +1041,6 @@ class AgxArmRosNode(Node):
             elif not self.enable_flag:
                 self.get_logger().warn("Agx_arm is not enabled, cannot move to home position")
             else:
-                if not self.is_switch_seamlessly:
-                    arm_status = self.agx_arm.get_arm_status()
-                    if arm_status is not None and arm_status.msg.ctrl_mode == self.agx_arm.ARM_STATUS.CtrlMode.TEACHING_MODE:
-                        self.get_logger().warn("Agx_arm is in teach mode, cannot move to home position")
-                        return response
-                    
                 if self.is_mit_mode:
                     self.agx_arm.move_js([0] * self.arm_joint_count)
                 else:
@@ -992,7 +1094,11 @@ class AgxArmRosNode(Node):
                 self.get_logger().warn("exit teach mode just piper series supported")
                 return response
 
-            if arm_status is not None and arm_status.msg.ctrl_mode == self.agx_arm.ARM_STATUS.CtrlMode.TEACHING_MODE:
+            if self.is_mit_mode or (
+                arm_status is not None
+                and arm_status.msg.ctrl_mode
+                == self.agx_arm.ARM_STATUS.CtrlMode.TEACHING_MODE
+            ):
                 self.agx_arm.move_js([0] * self.arm_joint_count)
                 time.sleep(2)
                 self.agx_arm.electronic_emergency_stop()
@@ -1002,6 +1108,7 @@ class AgxArmRosNode(Node):
                 time.sleep(0.5)
                 self._enable_arm(True)
                 self.agx_arm.move_j([0] * self.arm_joint_count)
+                self.is_mit_mode = False
                 self.get_logger().info("Exited teach mode successfully")
             else:
                 self.get_logger().info("Agx_arm is not in teach mode")

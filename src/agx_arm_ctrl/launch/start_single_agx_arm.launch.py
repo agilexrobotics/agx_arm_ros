@@ -145,6 +145,7 @@ def generate_launch_description():
             ('control/move_c', 'control/move_c'),
             ('control/move_js', 'control/move_js'),
             ('control/move_mit', 'control/move_mit'),
+            ('control/move_cpv', 'control/move_cpv'),
             ('control/hand', 'control/hand'),
             ('control/hand_position_time', 'control/hand_position_time'),
 
