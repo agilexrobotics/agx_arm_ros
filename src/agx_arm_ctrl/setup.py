@@ -24,7 +24,6 @@ setup(
     maintainer_email='root@todo.todo',
     description='AgileX Robotic Arm ROS Package',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'agx_arm_ctrl_single = agx_arm_ctrl.agx_arm_ctrl_single_node:main',
