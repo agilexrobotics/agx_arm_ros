@@ -33,6 +33,15 @@
     <origin xyz="$(arg tcp_offset_xyz)" rpy="$(arg tcp_offset_rpy)" />
   </joint>
 
+  <!-- Gripper camera optical frame (z forward, x right, y down), matches the
+       Isaac Sim camera_link_joint on link6 and the "sim_camera" frame_id -->
+  <link name="sim_camera" />
+  <joint name="sim_camera_joint" type="fixed">
+    <parent link="link6" />
+    <child link="sim_camera" />
+    <origin xyz="-0.011506 0.073110 0.036250" rpy="0.0 0.35080 -1.57000" />
+  </joint>
+
   <xacro:include filename="agx_arm.ros2_control.xacro" />
   <xacro:agx_arm_ros2_control
     name="FakeSystem"
