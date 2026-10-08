@@ -242,6 +242,12 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 
 ### Launch Parameters
 
+You can also display the standalone gripper model, rooted at `gripper_base` and including both fingers and mimic joints:
+
+```bash
+ros2 launch agx_arm_description display.launch.py custom_model:=agx_gripper/urdf/agx_gripper_description.urdf
+```
+
 | Parameter | Default | Description | Options |
 |-----------|---------|-------------|---------|
 | `can_port` | `can0` | CAN port | - |

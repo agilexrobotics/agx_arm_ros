@@ -45,9 +45,9 @@
       <disable_collisions link1="flange_link" link2="link5" reason="Never" />
     </xacro:unless>
     <xacro:if value="$(eval arm_type == 'nero')">
-      <disable_collisions link1="gripper_flange" link2="link7" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="gripper_base" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="link6" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link7" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="gripper_base" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="link6" reason="Never" />
       <disable_collisions link1="gripper_base" link2="link6" reason="Never" />
     </xacro:if>
   </xacro:if>
@@ -176,19 +176,15 @@
     <disable_collisions link1="left_thumb_metacarpal_link" link2="left_thumb_touch_link" reason="Never" />
     <disable_collisions link1="left_thumb_proximal_link" link2="left_thumb_touch_link" reason="Never" />
     <xacro:if value="$(eval arm_type == 'nero')">
-      <disable_collisions link1="revo2_flange" link2="link7" reason="Adjacent" />
-      <disable_collisions link1="revo2_flange" link2="left_base_link" reason="Adjacent" />
-      <disable_collisions link1="revo2_flange" link2="link6" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link7" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="revo2_flange" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="left_base_link" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link6" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link5" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="base_link" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link1" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link2" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link3" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link4" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link7" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="left_base_link" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="link6" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link5" reason="Never" />
+      <disable_collisions link1="flange_link" link2="base_link" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link1" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link2" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link3" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link4" reason="Never" />
     </xacro:if>
     <xacro:unless value="$(eval arm_type == 'nero')">
       <disable_collisions link1="flange_link" link2="link6" reason="Adjacent" />
@@ -321,19 +317,15 @@
     <disable_collisions link1="right_thumb_metacarpal_link" link2="right_thumb_touch_link" reason="Never" />
     <disable_collisions link1="right_thumb_proximal_link" link2="right_thumb_touch_link" reason="Never" />
     <xacro:if value="$(eval arm_type == 'nero')">
-      <disable_collisions link1="revo2_flange" link2="link7" reason="Adjacent" />
-      <disable_collisions link1="revo2_flange" link2="right_base_link" reason="Adjacent" />
-      <disable_collisions link1="revo2_flange" link2="link6" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link7" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="revo2_flange" reason="Adjacent" />
-      <disable_collisions link1="gripper_flange" link2="right_base_link" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link6" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link5" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="base_link" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link1" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link2" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link3" reason="Never" />
-      <disable_collisions link1="gripper_flange" link2="link4" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link7" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="right_base_link" reason="Adjacent" />
+      <disable_collisions link1="flange_link" link2="link6" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link5" reason="Never" />
+      <disable_collisions link1="flange_link" link2="base_link" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link1" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link2" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link3" reason="Never" />
+      <disable_collisions link1="flange_link" link2="link4" reason="Never" />
     </xacro:if>
     <xacro:unless value="$(eval arm_type == 'nero')">
       <disable_collisions link1="flange_link" link2="link6" reason="Adjacent" />
@@ -396,13 +388,5 @@
     <disable_collisions link1="link4" link2="link7" reason="Never" />
     <disable_collisions link1="link5" link2="link7" reason="Never" />
     <disable_collisions link1="link6" link2="link7" reason="Adjacent" />
-    <xacro:if value="$(eval effector_type == 'none')">
-      <disable_collisions link1="base_link" link2="end_effector" reason="Never" />
-      <disable_collisions link1="end_effector" link2="link1" reason="Never" />
-      <disable_collisions link1="end_effector" link2="link2" reason="Never" />
-      <disable_collisions link1="end_effector" link2="link3" reason="Never" />
-      <disable_collisions link1="end_effector" link2="link4" reason="Never" />
-      <disable_collisions link1="end_effector" link2="link7" reason="Adjacent" />
-    </xacro:if>
   </xacro:if>
 </robot>

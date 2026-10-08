@@ -242,6 +242,12 @@ ros2 launch agx_arm_ctrl start_single_agx_arm_moveit.launch.py can_port:=can0 ar
 
 ### 启动参数
 
+也可直接查看独立夹爪模型（根连杆为 `gripper_base`，包含两片夹片及 mimic 关节）：
+
+```bash
+ros2 launch agx_arm_description display.launch.py custom_model:=agx_gripper/urdf/agx_gripper_description.urdf
+```
+
 | 参数 | 默认值 | 说明 | 可选值 |
 |------|--------|------|--------|
 | `can_port` | `can0` | CAN 端口 | - |
