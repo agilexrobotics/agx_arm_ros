@@ -62,8 +62,8 @@ You can also expand `RobotModel` → `Links` in the left panel and check the lin
 `display.launch.py` supports the `tcp_offset` parameter. When set, a `tcp_link` coordinate frame is automatically displayed in RViz:
 
 ```bash
-# Display tcp_link 0.12m in front of link6
-ros2 launch agx_arm_description display.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.12, 0.0, 0.0, 0.0]'
+# Display tcp_link at the gripper tip, 0.1425m in front of link6
+ros2 launch agx_arm_description display.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.1425, 0.0, 0.0, 0.0]'
 ```
 
 The parameter format is `[x, y, z, rx, ry, rz]`, all values must be floating-point numbers, with units as defined in [Section 1](#1-definition-of-tcp_offset-parameter).
@@ -71,7 +71,7 @@ The parameter format is `[x, y, z, rx, ry, rz]`, all values must be floating-poi
 > **Tip:** MoveIt also supports the `tcp_offset` parameter. When set, the planning target and interactive marker align with the TCP position:
 >
 > ```bash
-> ros2 launch agx_arm_moveit demo.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.12, 0.0, 0.0, 0.0]'
+> ros2 launch agx_arm_moveit demo.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.1425, 0.0, 0.0, 0.0]'
 > ```
 
 ![piper_rviz_tcp_4](../../assets/pictures/piper_rviz_tcp_4.png)

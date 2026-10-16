@@ -61,8 +61,8 @@ ros2 launch agx_arm_description display.launch.py arm_type:=nero effector_type:=
 `display.launch.py` 支持 `tcp_offset` 参数，设置后 RViz 中会自动显示 `tcp_link` 坐标系：
 
 ```bash
-# 在 link6 前方 0.12m 处显示 tcp_link
-ros2 launch agx_arm_description display.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.12, 0.0, 0.0, 0.0]'
+# 在 link6 前方 0.1425m 的夹爪尖端处显示 tcp_link
+ros2 launch agx_arm_description display.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.1425, 0.0, 0.0, 0.0]'
 ```
 
 参数格式为 `[x, y, z, rx, ry, rz]`，所有值均为浮点数，单位与[第一节](#一tcp_offset-参数定义)一致。
@@ -70,7 +70,7 @@ ros2 launch agx_arm_description display.launch.py arm_type:=piper effector_type:
 > **提示：** MoveIt 同样支持 `tcp_offset` 参数，设置后规划目标和交互标记会对齐到 TCP 位置：
 >
 > ```bash
-> ros2 launch agx_arm_moveit demo.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.12, 0.0, 0.0, 0.0]'
+> ros2 launch agx_arm_moveit demo.launch.py arm_type:=piper effector_type:=agx_gripper tcp_offset:='[0.0, 0.0, 0.1425, 0.0, 0.0, 0.0]'
 > ```
 
 ![piper_rviz_tcp_4](../../assets/pictures/piper_rviz_tcp_4.png)
