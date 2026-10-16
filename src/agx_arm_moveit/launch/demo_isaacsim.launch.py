@@ -252,6 +252,11 @@ def generate_launch_description():
             # ros2_controller_node,
 
             DeclareLaunchArgument(
+                "hardware_plugin",
+                default_value="joint_state_topic_hardware_interface/JointStateTopicSystem",
+                description="ros2_control hardware plugin for Isaac Sim.",
+            ),
+            DeclareLaunchArgument(
                 "namespace",
                 default_value="",
                 description="ROS namespace for this arm instance (e.g. arm1).",

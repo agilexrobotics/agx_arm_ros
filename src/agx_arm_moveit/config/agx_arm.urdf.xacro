@@ -4,6 +4,7 @@
   <xacro:arg name="effector_type" default="none" />
   <xacro:arg name="revo2_type" default="left" />
   <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+  <xacro:arg name="hardware_plugin" default="mock_components/GenericSystem" />
   <xacro:arg name="tcp_offset_xyz" default="0 0 0" />
   <xacro:arg name="tcp_offset_rpy" default="0 0 0" />
 

@@ -78,6 +78,9 @@ def build_moveit_config(context):
 
     profile = _select_profile(effector_type, revo2_type)
     urdf_mappings = {
+        "hardware_plugin": LaunchConfiguration(
+            "hardware_plugin", default="mock_components/GenericSystem"
+        ).perform(context),
         "arm_type": arm_type,
         "effector_type": model_effector_type,
         "revo2_type": revo2_type,

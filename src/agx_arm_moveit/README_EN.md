@@ -29,6 +29,19 @@
 
 ## 1. Install MoveIt 2
 
+For the CAN-connected arm, use `demo.launch.py` with the arm control node,
+or `start_single_agx_arm_moveit.launch.py` on its own. The standard demo uses
+`mock_components/GenericSystem` to interpolate trajectories and publishes the
+result on `control/joint_states` for `agx_arm_ctrl` to send over CAN.
+With `follow:=true`, MoveIt plans from `feedback/joint_states`; controller
+success still reflects the interpolated command state, not verified physical
+arrival. Do not start a second arm control node for the same CAN port.
+
+`demo_isaacsim.launch.py` instead selects
+`joint_state_topic_hardware_interface/JointStateTopicSystem` and exchanges
+commands and feedback on `/ros2c_joint_commands` and `/ros2c_joint_states`.
+Those topics are for the simulator and do not connect directly to the CAN driver.
+
 1) Binary Installation
 [Reference](https://moveit.ai/install-moveit2/binary/)
 
