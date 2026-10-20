@@ -15,6 +15,7 @@ from pyAgxArm import (
 )
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from builtin_interfaces.msg import Time
 from std_srvs.srv import SetBool, Empty
 from geometry_msgs.msg import Pose, PoseStamped, PoseArray
@@ -78,6 +79,9 @@ if TYPE_CHECKING:
     from pyAgxArm.api.agx_arm_factory import PiperCanDefaultConfig
 
 class AgxArmRosNode(Node):
+
+    _STATUS_RATE_HZ = 2.0
+    _STATUS_TIMEOUT_S = 2.0
 
     def __init__(self):
         super().__init__("agx_arm_ctrl_single_node")
@@ -348,6 +352,12 @@ class AgxArmRosNode(Node):
             self.hand_status_pub = self.create_publisher(
                 HandStatus, "feedback/hand_status", 1
             )
+        self.motor_status_pub = self.create_publisher(
+            DiagnosticArray, "feedback/motor_status", 10
+        )
+        self._status_timer = self.create_timer(
+            1.0 / self._STATUS_RATE_HZ, self._publish_status
+        )
 
     def _setup_subscribers(self):
         self.create_subscription(
@@ -530,8 +540,6 @@ class AgxArmRosNode(Node):
                         self._control_ready_logged = True
                 self._publish_joint_states()
                 self._publish_pose()
-                self._publish_arm_status()
-                self._publish_effector_status()
                 self._publish_leader_joint_states()
             else:
                 if feedback_alive:
@@ -637,6 +645,80 @@ class AgxArmRosNode(Node):
         # self.flange_pose_pub.publish(msg)
         msg.pose = pose2
         self.tcp_pose_pub.publish(msg)
+
+    def _publish_status(self):
+        msg = DiagnosticArray()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        now = time.time()
+        fault_fields = {
+            "undervoltage": "voltage_too_low",
+            "motor_overtemp": "motor_overheating",
+            "driver_overcurrent": "driver_overcurrent",
+            "driver_overtemp": "driver_overheating",
+            "collision_tripped": "collision_status",
+            "driver_error": "driver_error_status",
+            "stall_tripped": "stall_status",
+        }
+        numeric_fields = {
+            "bus_voltage_v": "vol",
+            "driver_temp_deg": "foc_temp",
+            "motor_temp_deg": "motor_temp",
+            "bus_current": "bus_current",
+            "status_raw": "foc_status_code",
+        }
+        for joint_index, joint_name in enumerate(self.arm_joint_names, start=1):
+            status = DiagnosticStatus()
+            status.name = joint_name
+            status.hardware_id = f"{self.can_port}:{joint_index}"
+            status.level = DiagnosticStatus.STALE
+            status.message = "low-speed feedback unavailable"
+            values = {
+                name: "unknown"
+                for name in ("enabled", *fault_fields, *numeric_fields)
+            }
+            values["low_speed_timestamp_ns"] = "unknown"
+            values["low_speed_age_s"] = "unknown"
+            values["control_enabled"] = str(self.control_enabled).lower()
+            feedback = self.agx_arm.get_driver_states(joint_index)
+            if feedback is not None:
+                timestamp = feedback.timestamp
+                age = now - timestamp
+                values["low_speed_timestamp_ns"] = (
+                    str(int(timestamp * 1e9)) if math.isfinite(timestamp)
+                    else "unknown"
+                )
+                values["low_speed_age_s"] = str(age)
+                if (
+                    math.isfinite(timestamp)
+                    and timestamp > 0.0
+                    and 0.0 <= age <= self._STATUS_TIMEOUT_S
+                ):
+                    driver_state = feedback.msg
+                    enabled = driver_state.foc_status.driver_enable_status
+                    values["enabled"] = str(enabled).lower()
+                    faults = []
+                    for name, attribute in fault_fields.items():
+                        active = getattr(driver_state.foc_status, attribute)
+                        values[name] = str(active).lower()
+                        if active:
+                            faults.append(name)
+                    for name, attribute in numeric_fields.items():
+                        values[name] = str(getattr(driver_state, attribute))
+                    status.level = DiagnosticStatus.OK
+                    status.message = "enabled" if enabled else "disabled"
+                    if faults:
+                        status.level = DiagnosticStatus.ERROR
+                        status.message = ", ".join(faults)
+                else:
+                    status.message = "low-speed feedback timestamp invalid or expired"
+            status.values = [
+                KeyValue(key=key, value=value) for key, value in values.items()
+            ]
+            msg.status.append(status)
+        self.motor_status_pub.publish(msg)
+        if self.agx_arm.is_ok():
+            self._publish_arm_status()
+            self._publish_effector_status()
 
     def _publish_arm_status(self):
         arm_status = self.agx_arm.get_arm_status()

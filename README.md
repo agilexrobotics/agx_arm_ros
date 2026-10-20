@@ -259,7 +259,7 @@ ros2 launch agx_arm_description display.launch.py custom_model:=agx_gripper/urdf
 | `fast_mode` | `false` | 启用快速模式（如果启用，`/control/joint_states` 内部将改用无平滑无插值的 `move_js` 关节控制接口控制机械臂） | `true`, `false` |
 | `speed_percent` | `0` | 运动速度 (%)；仅在取值为 `1-100` 时设置，否则保持 SDK 默认值 | - |
 | `fw_version` | 空字符串 | 固件版本；为空时自动获取，非空时跳过自动获取。格式为 `vXXX` 或 `vXXXX`，如 `v190`、`v1891` | - |
-| `pub_rate` | `200` | 状态发布频率 (Hz) | - |
+| `pub_rate` | `200` | Joint and TCP pose feedback rate (Hz) | - |
 | `enable_timeout` | `5.0` | 使能超时 (秒) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | 工具中心(TCP)相对法兰盘中心的偏移 [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | 夹爪默认力（单位：N） | `>=0.0` |
@@ -590,9 +590,42 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 | `/feedback/joint_states` | `sensor_msgs/JointState` | 关节状态 | 始终可用 |
 | `/feedback/tcp_pose` | `geometry_msgs/PoseStamped` | TCP 位姿 | 始终可用 |
 | `/feedback/arm_status` | `agx_arm_msgs/AgxArmStatus` | 机械臂状态 | 始终可用 |
+| `/feedback/motor_status` | `diagnostic_msgs/DiagnosticArray` | Per-joint motor diagnostics | All arm models |
 | `/feedback/leader_joint_states` | `sensor_msgs/JointState` | 主导臂关节状态 | 主导臂模式 |
 | `/feedback/gripper_status` | `agx_arm_msgs/GripperStatus` | 夹爪状态 | 配置 AgxGripper |
 | `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | 灵巧手状态 | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不发布） |
+
+#### `feedback/motor_status`
+
+`DiagnosticArray` contains one entry per arm motor (Piper: 6, Nero: 7), excluding
+end effectors. `name` is the SDK joint name; `hardware_id` is `<can_port>:<1-based joint index>`.
+The topic follows the configured namespace and continues publishing when feedback is unavailable.
+
+All status topics publish at a fixed **2 Hz**; motor feedback expires after **2 seconds**.
+These settings are internal, not ROS parameters. Existing status message types and availability
+checks are unchanged. Joint, TCP pose and leader feedback still use `pub_rate` (default 200 Hz).
+
+| Level | Meaning |
+|---|---|
+| `0 / OK` | Fresh feedback, no active fault; the motor may be disabled |
+| `2 / ERROR` | Fresh feedback with an active fault |
+| `3 / STALE` | Missing, invalid or expired feedback |
+
+| `KeyValue` keys | Meaning |
+|---|---|
+| `enabled`, `control_enabled` | Actual motor enable state; node command gate |
+| `bus_voltage_v`, `bus_current` | Voltage (V), current (A); zero current may mean sampling is absent |
+| `driver_temp_deg`, `motor_temp_deg` | Driver and motor temperatures (degrees Celsius) |
+| `status_raw` | Raw driver status code |
+| `low_speed_timestamp_ns`, `low_speed_age_s` | CAN reception Unix timestamp (ns), feedback age (s); array header uses ROS time |
+| `undervoltage`, `motor_overtemp`, `driver_overcurrent`, `driver_overtemp`, `collision_tripped`, `driver_error`, `stall_tripped` | Fault flags |
+
+Look up entries and keys by name. Values are strings: booleans use `true`/`false`;
+stale motor enable, fault and numeric driver values use `unknown`, not false or zero.
+
+```bash
+ros2 topic echo /feedback/motor_status
+```
 
 #### `/feedback/joint_states` 详细说明
 
