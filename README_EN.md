@@ -587,10 +587,93 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 |-------|--------------|-------------|-----------|
 | `/feedback/joint_states` | `sensor_msgs/JointState` | Joint states | Always available |
 | `/feedback/tcp_pose` | `geometry_msgs/PoseStamped` | TCP pose | Always available |
-| `/feedback/arm_status` | `agx_arm_msgs/AgxArmStatus` | Arm status | Always available |
+| `/feedback/arm_status` | `diagnostic_msgs/DiagnosticArray` | Arm status | Always available |
+| `/feedback/motor_status` | `diagnostic_msgs/DiagnosticArray` | Per-joint motor diagnostics | All arm models |
 | `/feedback/leader_joint_states` | `sensor_msgs/JointState` | Leader joint states | Leader arm mode |
-| `/feedback/gripper_status` | `agx_arm_msgs/GripperStatus` | Gripper status | AgxGripper configured |
-| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | Dexterous hand status | `revo2` configured (`revo2_pro` / `revo2_touch` do not publish) |
+| `/feedback/gripper_status` | `diagnostic_msgs/DiagnosticArray` | Gripper status | AgxGripper configured |
+| `/feedback/hand_status` | `diagnostic_msgs/DiagnosticArray` | Dexterous hand status | `revo2` configured (`revo2_pro` / `revo2_touch` do not publish) |
+
+#### Status Message Format
+
+The arm, gripper and hand status topics now use `diagnostic_msgs/DiagnosticArray`
+instead of custom messages. Topic names are unchanged; subscribers must update their
+message type and read status fields from `status[0].values` by key.
+The three obsolete custom status definitions are no longer generated; control messages are unchanged.
+
+Each array has one entry named `arm`, `gripper` or `hand`, with `hardware_id`
+`<can_port>:<name>`. All `KeyValue.value` fields are strings: numbers use decimal
+notation, booleans use `true`/`false`, and arm joint flags use JSON boolean arrays
+in SDK joint order (Piper: 6, Nero: 7). `header.stamp` is the SDK status reception time.
+
+On ROS 2 Humble, `level` is a byte field, and `ros2 topic echo` renders `OK` as `"\0"`.
+The level tables below use the corresponding numeric codes; Python subscribers should
+compare against constants such as `DiagnosticStatus.OK`.
+
+| Topic | `level` policy |
+|---|---|
+| `arm_status` | `ERROR` for state 1-10, 14-15 or nonzero error code; `OK` for 0 and teaching states 11-13; other states `WARN` |
+| `gripper_status` | `ERROR` for any of the six fault flags; otherwise `OK`, including disabled/not homed |
+| `hand_status` | `ERROR` for any blocked motor (2); otherwise `WARN` for unknown motor codes; idle/running `OK` |
+
+These three status topics retain their existing availability checks and do not
+publish when status feedback is unavailable. Only `motor_status` continues publishing
+`STALE` entries.
+
+#### Motor Status Details (`/feedback/motor_status`)
+
+`diagnostic_msgs/DiagnosticArray` contains one entry per arm motor (Piper: 6, Nero: 7),
+excluding end effectors. `name` is the SDK joint name; `hardware_id` is
+`<can_port>:<1-based joint index>`. The topic follows the configured namespace and
+continues publishing when feedback is unavailable.
+
+All status topics publish at a fixed **2 Hz**; motor feedback expires after **2 seconds**.
+These settings are internal, not ROS parameters. Status availability checks are unchanged.
+Joint, TCP pose and leader feedback still use `pub_rate` (default 200 Hz).
+
+| `KeyValue` keys | Meaning |
+|---|---|
+| `enabled` | Actual motor enable state |
+| `bus_voltage_v`, `bus_current` | Voltage (V), current (A); zero current may mean sampling is absent |
+| `driver_temp_deg`, `motor_temp_deg` | Driver and motor temperatures (degrees Celsius) |
+| `status_raw` | Raw driver status code |
+| `undervoltage`, `motor_overtemp`, `driver_overcurrent`, `driver_overtemp`, `collision_tripped`, `driver_error`, `stall_tripped` | Fault flags |
+
+| Level | Meaning |
+|---|---|
+| `0 / OK` | Fresh feedback, no active fault; the motor may be disabled |
+| `2 / ERROR` | Fresh feedback with an active fault |
+| `3 / STALE` | Missing, invalid or expired feedback |
+
+Look up entries and keys by name. Values are strings: booleans use `true`/`false`;
+stale motor enable, fault and numeric driver values use `unknown`, not false or zero.
+
+```bash
+ros2 topic echo /feedback/motor_status --once
+```
+
+Normal output example (header omitted; only the first motor shown):
+
+```yaml
+status:
+- level: "\0"
+  name: joint1
+  message: enabled
+  hardware_id: "can0:1"
+  values:
+  - {key: enabled, value: "true"}
+  - {key: undervoltage, value: "false"}
+  - {key: motor_overtemp, value: "false"}
+  - {key: driver_overcurrent, value: "false"}
+  - {key: driver_overtemp, value: "false"}
+  - {key: collision_tripped, value: "false"}
+  - {key: driver_error, value: "false"}
+  - {key: stall_tripped, value: "false"}
+  - {key: bus_voltage_v, value: "24.0"}
+  - {key: driver_temp_deg, value: "35"}
+  - {key: motor_temp_deg, value: "32"}
+  - {key: bus_current, value: "0.1"}
+  - {key: status_raw, value: "64"}
+```
 
 #### Joint States Details (`/feedback/joint_states`)
 
@@ -640,21 +723,22 @@ Right hand joint names:
 
 #### Arm Status Details (`/feedback/arm_status`)
 
-Message type: `agx_arm_msgs/AgxArmStatus`
+Message type: `diagnostic_msgs/DiagnosticArray`. The following keys are in
+`status[0].values`; all values are strings, with the value semantics shown below.
 
 **Message Field Description:**
 
-| Field | Type | Description |
+| Key | Value semantics | Description |
 |-------|------|-------------|
-| `ctrl_mode` | `uint8` | Control mode, see table below |
-| `arm_status` | `uint8` | Arm status, see table below |
-| `mode_feedback` | `uint8` | Mode feedback, see table below |
-| `teach_status` | `uint8` | Teach status, see table below |
-| `motion_status` | `uint8` | Motion status: 0=reached target, 1=not reached |
-| `trajectory_num` | `uint8` | Current trajectory point number (0~255, feedback in offline trajectory mode) |
-| `err_status` | `int64` | Error status code |
-| `joint_1_angle_limit` ~ `joint_7_angle_limit` | `bool` | Joint 1~7 angle limit (true=abnormal, false=normal) |
-| `communication_status_joint_1` ~ `communication_status_joint_7` | `bool` | Joint 1~7 communication status (true=abnormal, false=normal) |
+| `ctrl_mode` | Integer | Control mode, see table below |
+| `arm_status` | Integer | Arm status, see table below |
+| `mode_feedback` | Integer | Mode feedback, see table below |
+| `teach_status` | Integer | Teach status, see table below |
+| `motion_status` | Integer | 0=reached target, 1=not reached |
+| `trajectory_num` | Integer | Offline trajectory point number, 0-255 |
+| `err_status` | Integer | Raw SDK `err_code` |
+| `joint_angle_limit` | JSON boolean array | Per-joint angle limit flags; true=abnormal |
+| `communication_status_joint` | JSON boolean array | Per-joint communication flags; true=abnormal |
 
 **Control Mode (`ctrl_mode`):**
 
@@ -715,58 +799,114 @@ Message type: `agx_arm_msgs/AgxArmStatus`
 | 6 | Terminate execution |
 | 7 | Move to trajectory start point |
 
+```bash
+ros2 topic echo /feedback/arm_status --once
+```
+
+Normal output example (Piper on `can0`, header omitted):
+
+```yaml
+status:
+- level: "\0"
+  name: arm
+  message: "arm_status=NORMAL(0x0), err_status=0"
+  hardware_id: "can0:arm"
+  values:
+  - {key: ctrl_mode, value: "1"}
+  - {key: arm_status, value: "0"}
+  - {key: mode_feedback, value: "1"}
+  - {key: teach_status, value: "0"}
+  - {key: motion_status, value: "0"}
+  - {key: trajectory_num, value: "0"}
+  - {key: err_status, value: "0"}
+  - {key: joint_angle_limit, value: "[false, false, false, false, false, false]"}
+  - {key: communication_status_joint, value: "[false, false, false, false, false, false]"}
+```
+
 #### Gripper Status Details (`/feedback/gripper_status`)
 
-Message type: `agx_arm_msgs/GripperStatus`
+Message type: `diagnostic_msgs/DiagnosticArray`. The following keys are in
+`status[0].values`; all values are strings.
 
 **Message Field Description:**
 
-| Field | Type | Description |
+| Key | Value semantics | Description |
 |-------|------|-------------|
-| `header` | `std_msgs/Header` | Message header |
-| `width` | `float64` | Current gripper opening width (unit: meters) |
-| `force` | `float64` | Current gripping force (unit: Newtons) |
-| `voltage_too_low` | `bool` | Voltage too low (true=abnormal, false=normal) |
-| `motor_overheating` | `bool` | Motor overheating (true=abnormal, false=normal) |
-| `driver_overcurrent` | `bool` | Driver overcurrent (true=abnormal, false=normal) |
-| `driver_overheating` | `bool` | Driver overheating (true=abnormal, false=normal) |
-| `sensor_status` | `bool` | Sensor status (true=abnormal, false=normal) |
-| `driver_error_status` | `bool` | Driver error status (true=abnormal, false=normal) |
-| `driver_enable_status` | `bool` | Driver enable status (true=enabled, false=disabled) |
-| `homing_status` | `bool` | Homing status (true=completed, false=not completed) |
+| `voltage_too_low` | Boolean | Low voltage fault |
+| `motor_overheating` | Boolean | Motor overtemperature fault |
+| `driver_overcurrent` | Boolean | Driver overcurrent fault |
+| `driver_overheating` | Boolean | Driver overtemperature fault |
+| `sensor_status` | Boolean | Sensor fault |
+| `driver_error_status` | Boolean | Driver fault |
+| `driver_enable_status` | Boolean | true=enabled, false=disabled |
+| `homing_status` | Boolean | true=homed, false=not homed |
+
+```bash
+ros2 topic echo /feedback/gripper_status --once
+```
+
+Normal output example (header omitted):
+
+```yaml
+status:
+- level: "\0"
+  name: gripper
+  message: enabled
+  hardware_id: "can0:gripper"
+  values:
+  - {key: voltage_too_low, value: "false"}
+  - {key: motor_overheating, value: "false"}
+  - {key: driver_overcurrent, value: "false"}
+  - {key: driver_overheating, value: "false"}
+  - {key: sensor_status, value: "false"}
+  - {key: driver_error_status, value: "false"}
+  - {key: driver_enable_status, value: "true"}
+  - {key: homing_status, value: "true"}
+```
 
 #### Hand Status Details (`/feedback/hand_status`)
 
-Message type: `agx_arm_msgs/HandStatus`
+Message type: `diagnostic_msgs/DiagnosticArray`. The following keys are in
+`status[0].values`; all values are strings.
 
 **Message Field Description:**
 
-| Field | Type | Description |
+| Key | Value semantics | Description |
 |-------|------|-------------|
-| `header` | `std_msgs/Header` | Message header |
-| `left_or_right` | `uint8` | Hand type identifier: 1=left hand, 2=right hand |
-
-**Finger Position Fields (range: [0, 100], 0=fully open, 100=fully closed):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `thumb_tip_pos` | `uint8` | Thumb tip position |
-| `thumb_base_pos` | `uint8` | Thumb base position |
-| `index_finger_pos` | `uint8` | Index finger position |
-| `middle_finger_pos` | `uint8` | Middle finger position |
-| `ring_finger_pos` | `uint8` | Ring finger position |
-| `pinky_finger_pos` | `uint8` | Pinky finger position |
+| `left_or_right` | Integer | 1=left hand, 2=right hand |
 
 **Finger Motor Status Fields (0=idle, 1=running, 2=stalled/jammed):**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `thumb_tip_status` | `uint8` | Thumb tip motor status |
-| `thumb_base_status` | `uint8` | Thumb base motor status |
-| `index_finger_status` | `uint8` | Index finger motor status |
-| `middle_finger_status` | `uint8` | Middle finger motor status |
-| `ring_finger_status` | `uint8` | Ring finger motor status |
-| `pinky_finger_status` | `uint8` | Pinky finger motor status |
+| `thumb_tip_status` | `string` | Thumb tip motor code |
+| `thumb_base_status` | `string` | Thumb base motor code |
+| `index_finger_status` | `string` | Index finger motor code |
+| `middle_finger_status` | `string` | Middle finger motor code |
+| `ring_finger_status` | `string` | Ring finger motor code |
+| `pinky_finger_status` | `string` | Pinky finger motor code |
+
+```bash
+ros2 topic echo /feedback/hand_status --once
+```
+
+Normal output example (header omitted):
+
+```yaml
+status:
+- level: "\0"
+  name: hand
+  message: hand feedback available
+  hardware_id: "can0:hand"
+  values:
+  - {key: left_or_right, value: "1"}
+  - {key: thumb_tip_status, value: "0"}
+  - {key: thumb_base_status, value: "0"}
+  - {key: index_finger_status, value: "0"}
+  - {key: middle_finger_status, value: "0"}
+  - {key: ring_finger_status, value: "0"}
+  - {key: pinky_finger_status, value: "0"}
+```
 
 ### Control Topics
 

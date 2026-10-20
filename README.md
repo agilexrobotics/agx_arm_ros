@@ -589,42 +589,88 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 |------|----------|------|----------|
 | `/feedback/joint_states` | `sensor_msgs/JointState` | 关节状态 | 始终可用 |
 | `/feedback/tcp_pose` | `geometry_msgs/PoseStamped` | TCP 位姿 | 始终可用 |
-| `/feedback/arm_status` | `agx_arm_msgs/AgxArmStatus` | 机械臂状态 | 始终可用 |
+| `/feedback/arm_status` | `diagnostic_msgs/DiagnosticArray` | 机械臂状态 | 始终可用 |
 | `/feedback/motor_status` | `diagnostic_msgs/DiagnosticArray` | Per-joint motor diagnostics | All arm models |
 | `/feedback/leader_joint_states` | `sensor_msgs/JointState` | 主导臂关节状态 | 主导臂模式 |
-| `/feedback/gripper_status` | `agx_arm_msgs/GripperStatus` | 夹爪状态 | 配置 AgxGripper |
-| `/feedback/hand_status` | `agx_arm_msgs/HandStatus` | 灵巧手状态 | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不发布） |
+| `/feedback/gripper_status` | `diagnostic_msgs/DiagnosticArray` | 夹爪状态 | 配置 AgxGripper |
+| `/feedback/hand_status` | `diagnostic_msgs/DiagnosticArray` | 灵巧手状态 | 配置 `revo2`（`revo2_pro` / `revo2_touch` 不发布） |
 
-#### `feedback/motor_status`
+#### 状态消息格式
 
-`DiagnosticArray` contains one entry per arm motor (Piper: 6, Nero: 7), excluding
-end effectors. `name` is the SDK joint name; `hardware_id` is `<can_port>:<1-based joint index>`.
-The topic follows the configured namespace and continues publishing when feedback is unavailable.
+机械臂、夹爪和灵巧手状态话题改用 `diagnostic_msgs/DiagnosticArray`，不再使用自定义状态消息。
+话题名称不变；订阅程序需要更新消息类型，并从 `status[0].values` 中按 key 读取状态字段。
+三个旧状态消息定义不再生成，控制消息保持不变。
 
-All status topics publish at a fixed **2 Hz**; motor feedback expires after **2 seconds**.
-These settings are internal, not ROS parameters. Existing status message types and availability
-checks are unchanged. Joint, TCP pose and leader feedback still use `pub_rate` (default 200 Hz).
+每个数组包含一个条目，`name` 分别为 `arm`、`gripper` 或 `hand`，
+`hardware_id` 为 `<can_port>:<name>`。所有 `KeyValue.value` 均为字符串：
+数值使用十进制，布尔值使用 `true`/`false`；机械臂关节标志使用 JSON 布尔数组，
+按 SDK 关节顺序排列（Piper：6 个，Nero：7 个）。`header.stamp` 为 SDK 状态接收时间。
 
-| Level | Meaning |
+在 ROS 2 Humble 中，`level` 是字节字段，`OK` 在 `ros2 topic echo` 中显示为 `"\0"`。
+下文等级说明使用对应的数字编码；Python 订阅程序应使用 `DiagnosticStatus.OK` 等常量比较。
+
+| 话题 | `level` 判定规则 |
 |---|---|
-| `0 / OK` | Fresh feedback, no active fault; the motor may be disabled |
-| `2 / ERROR` | Fresh feedback with an active fault |
-| `3 / STALE` | Missing, invalid or expired feedback |
+| `arm_status` | 状态为 1-10、14-15 或错误码非零时为 `ERROR`；状态为 0 或示教状态 11-13 时为 `OK`；其他状态为 `WARN` |
+| `gripper_status` | 六个故障标志中任一个为真时为 `ERROR`；否则为 `OK`，未使能或未回零不视为故障 |
+| `hand_status` | 任一手指电机堵转（2）时为 `ERROR`；否则未知电机状态码为 `WARN`，空闲或运行中为 `OK` |
 
-| `KeyValue` keys | Meaning |
+这三个话题保留原有可用性检查，状态反馈不可用时不发布。
+只有 `motor_status` 会继续发布 `STALE` 条目。
+
+#### `/feedback/motor_status` 详细说明
+
+`DiagnosticArray` 为每个机械臂电机提供一个条目（Piper：6 个，Nero：7 个），不包含末端执行器。
+`name` 为 SDK 关节名，`hardware_id` 为 `<can_port>:<从 1 开始的关节索引>`。
+话题遵循配置的命名空间，反馈不可用时仍继续发布。
+
+所有状态话题固定以 **2 Hz** 发布；电机反馈超过 **2 秒** 即过期。
+这些设置是内部常量，不是 ROS 参数，原有状态可用性检查保持不变。
+关节、TCP 位姿和主臂反馈仍使用 `pub_rate`（默认 200 Hz）。
+
+| `KeyValue` 字段 | 说明 |
 |---|---|
-| `enabled`, `control_enabled` | Actual motor enable state; node command gate |
-| `bus_voltage_v`, `bus_current` | Voltage (V), current (A); zero current may mean sampling is absent |
-| `driver_temp_deg`, `motor_temp_deg` | Driver and motor temperatures (degrees Celsius) |
-| `status_raw` | Raw driver status code |
-| `low_speed_timestamp_ns`, `low_speed_age_s` | CAN reception Unix timestamp (ns), feedback age (s); array header uses ROS time |
-| `undervoltage`, `motor_overtemp`, `driver_overcurrent`, `driver_overtemp`, `collision_tripped`, `driver_error`, `stall_tripped` | Fault flags |
+| `enabled` | 电机实际使能状态 |
+| `bus_voltage_v`, `bus_current` | 电压（V）、电流（A）；电流为零也可能表示未提供采样 |
+| `driver_temp_deg`, `motor_temp_deg` | 驱动器和电机温度（摄氏度） |
+| `status_raw` | 驱动器原始状态码 |
+| `undervoltage`, `motor_overtemp`, `driver_overcurrent`, `driver_overtemp`, `collision_tripped`, `driver_error`, `stall_tripped` | 故障标志 |
 
-Look up entries and keys by name. Values are strings: booleans use `true`/`false`;
-stale motor enable, fault and numeric driver values use `unknown`, not false or zero.
+| 等级 | 说明 |
+|---|---|
+| `0 / OK` | 反馈有效且未过期，没有故障；电机可以处于未使能状态 |
+| `2 / ERROR` | 反馈有效且未过期，存在故障 |
+| `3 / STALE` | 反馈缺失、时间戳无效或反馈过期 |
+
+按名称查找条目及 key。所有值均为字符串，布尔值使用 `true`/`false`；
+反馈失效时，电机使能、故障和驱动器数值字段均为 `unknown`，不能当作 false 或零处理。
 
 ```bash
-ros2 topic echo /feedback/motor_status
+ros2 topic echo /feedback/motor_status --once
+```
+
+正常输出示例（省略消息头，仅展示第一个电机）：
+
+```yaml
+status:
+- level: "\0"
+  name: joint1
+  message: enabled
+  hardware_id: "can0:1"
+  values:
+  - {key: enabled, value: "true"}
+  - {key: undervoltage, value: "false"}
+  - {key: motor_overtemp, value: "false"}
+  - {key: driver_overcurrent, value: "false"}
+  - {key: driver_overtemp, value: "false"}
+  - {key: collision_tripped, value: "false"}
+  - {key: driver_error, value: "false"}
+  - {key: stall_tripped, value: "false"}
+  - {key: bus_voltage_v, value: "24.0"}
+  - {key: driver_temp_deg, value: "35"}
+  - {key: motor_temp_deg, value: "32"}
+  - {key: bus_current, value: "0.1"}
+  - {key: status_raw, value: "64"}
 ```
 
 #### `/feedback/joint_states` 详细说明
@@ -675,21 +721,22 @@ ros2 topic echo /feedback/motor_status
 
 #### `/feedback/arm_status` 详细说明
 
-消息类型：`agx_arm_msgs/AgxArmStatus`
+消息类型：`diagnostic_msgs/DiagnosticArray`。以下 key 位于 `status[0].values` 中；
+所有值均为字符串，下表说明其数值语义。
 
 **消息字段说明：**
 
-| 字段 | 类型 | 说明 |
+| Key | 值语义 | 说明 |
 |------|------|------|
-| `ctrl_mode` | `uint8` | 控制模式，见下表 |
-| `arm_status` | `uint8` | 机械臂状态，见下表 |
-| `mode_feedback` | `uint8` | 模式反馈，见下表 |
-| `teach_status` | `uint8` | 示教状态，见下表 |
-| `motion_status` | `uint8` | 运动状态：0=已到达目标位置，1=未到达目标位置 |
-| `trajectory_num` | `uint8` | 当前轨迹点序号（0~255，离线轨迹模式下反馈） |
-| `err_status` | `int64` | 错误状态码 |
-| `joint_1_angle_limit` ~ `joint_7_angle_limit` | `bool` | 关节1~7角度超限（true=异常，false=正常） |
-| `communication_status_joint_1` ~ `communication_status_joint_7` | `bool` | 关节1~7通信状态（true=异常，false=正常） |
+| `ctrl_mode` | 整数 | 控制模式，见下表 |
+| `arm_status` | 整数 | 机械臂状态，见下表 |
+| `mode_feedback` | 整数 | 运动模式，见下表 |
+| `teach_status` | 整数 | 示教状态，见下表 |
+| `motion_status` | 整数 | 0=已到达目标位置，1=未到达 |
+| `trajectory_num` | 整数 | 离线轨迹点序号，0-255 |
+| `err_status` | 整数 | SDK 原始 `err_code` |
+| `joint_angle_limit` | JSON 布尔数组 | 各关节角度超限标志；true=异常 |
+| `communication_status_joint` | JSON 布尔数组 | 各关节通信标志；true=异常 |
 
 **控制模式 (`ctrl_mode`)：**
 
@@ -750,58 +797,112 @@ ros2 topic echo /feedback/motor_status
 | 6 | 终止执行 |
 | 7 | 移动至轨迹起点 |
 
+```bash
+ros2 topic echo /feedback/arm_status --once
+```
+
+正常输出示例（Piper 使用 `can0`，省略消息头）：
+
+```yaml
+status:
+- level: "\0"
+  name: arm
+  message: "arm_status=NORMAL(0x0), err_status=0"
+  hardware_id: "can0:arm"
+  values:
+  - {key: ctrl_mode, value: "1"}
+  - {key: arm_status, value: "0"}
+  - {key: mode_feedback, value: "1"}
+  - {key: teach_status, value: "0"}
+  - {key: motion_status, value: "0"}
+  - {key: trajectory_num, value: "0"}
+  - {key: err_status, value: "0"}
+  - {key: joint_angle_limit, value: "[false, false, false, false, false, false]"}
+  - {key: communication_status_joint, value: "[false, false, false, false, false, false]"}
+```
+
 #### `/feedback/gripper_status` 详细说明
 
-消息类型：`agx_arm_msgs/GripperStatus`
+消息类型：`diagnostic_msgs/DiagnosticArray`。以下 key 位于 `status[0].values` 中，所有值均为字符串。
 
 **消息字段说明：**
 
-| 字段 | 类型 | 说明 |
+| Key | 值语义 | 说明 |
 |------|------|------|
-| `header` | `std_msgs/Header` | 消息头 |
-| `width` | `float64` | 当前夹爪开口宽度（单位：米） |
-| `force` | `float64` | 当前夹持力（单位：牛顿） |
-| `voltage_too_low` | `bool` | 电压过低（true=异常，false=正常） |
-| `motor_overheating` | `bool` | 电机过热（true=异常，false=正常） |
-| `driver_overcurrent` | `bool` | 驱动器过流（true=异常，false=正常） |
-| `driver_overheating` | `bool` | 驱动器过热（true=异常，false=正常） |
-| `sensor_status` | `bool` | 传感器状态（true=异常，false=正常） |
-| `driver_error_status` | `bool` | 驱动器错误状态（true=异常，false=正常） |
-| `driver_enable_status` | `bool` | 驱动器使能状态（true=已使能，false=未使能） |
-| `homing_status` | `bool` | 回零/归零状态（true=已完成，false=未完成） |
+| `voltage_too_low` | 布尔值 | 电压过低故障 |
+| `motor_overheating` | 布尔值 | 电机过温故障 |
+| `driver_overcurrent` | 布尔值 | 驱动器过流故障 |
+| `driver_overheating` | 布尔值 | 驱动器过温故障 |
+| `sensor_status` | 布尔值 | 传感器故障 |
+| `driver_error_status` | 布尔值 | 驱动器故障 |
+| `driver_enable_status` | 布尔值 | true=已使能，false=未使能 |
+| `homing_status` | 布尔值 | true=已回零，false=未回零 |
+
+```bash
+ros2 topic echo /feedback/gripper_status --once
+```
+
+正常输出示例（省略消息头）：
+
+```yaml
+status:
+- level: "\0"
+  name: gripper
+  message: enabled
+  hardware_id: "can0:gripper"
+  values:
+  - {key: voltage_too_low, value: "false"}
+  - {key: motor_overheating, value: "false"}
+  - {key: driver_overcurrent, value: "false"}
+  - {key: driver_overheating, value: "false"}
+  - {key: sensor_status, value: "false"}
+  - {key: driver_error_status, value: "false"}
+  - {key: driver_enable_status, value: "true"}
+  - {key: homing_status, value: "true"}
+```
 
 #### `/feedback/hand_status` 详细说明
 
-消息类型：`agx_arm_msgs/HandStatus`
+消息类型：`diagnostic_msgs/DiagnosticArray`。以下 key 位于 `status[0].values` 中，所有值均为字符串。
 
 **消息字段说明：**
 
-| 字段 | 类型 | 说明 |
+| Key | 值语义 | 说明 |
 |------|------|------|
-| `header` | `std_msgs/Header` | 消息头 |
-| `left_or_right` | `uint8` | 手部类型标识：1=左手，2=右手 |
-
-**手指位置字段（范围：[0, 100]，0=完全张开，100=完全弯曲）：**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `thumb_tip_pos` | `uint8` | 拇指指尖位置 |
-| `thumb_base_pos` | `uint8` | 拇指指根位置 |
-| `index_finger_pos` | `uint8` | 食指位置 |
-| `middle_finger_pos` | `uint8` | 中指位置 |
-| `ring_finger_pos` | `uint8` | 无名指位置 |
-| `pinky_finger_pos` | `uint8` | 小指位置 |
+| `left_or_right` | 整数 | 1=左手，2=右手 |
 
 **手指电机状态字段（0=空闲，1=运行中，2=堵转/卡死）：**
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `thumb_tip_status` | `uint8` | 拇指指尖电机状态 |
-| `thumb_base_status` | `uint8` | 拇指指根电机状态 |
-| `index_finger_status` | `uint8` | 食指电机状态 |
-| `middle_finger_status` | `uint8` | 中指电机状态 |
-| `ring_finger_status` | `uint8` | 无名指电机状态 |
-| `pinky_finger_status` | `uint8` | 小指电机状态 |
+| `thumb_tip_status` | `string` | 拇指指尖电机状态码 |
+| `thumb_base_status` | `string` | 拇指指根电机状态码 |
+| `index_finger_status` | `string` | 食指电机状态码 |
+| `middle_finger_status` | `string` | 中指电机状态码 |
+| `ring_finger_status` | `string` | 无名指电机状态码 |
+| `pinky_finger_status` | `string` | 小指电机状态码 |
+
+```bash
+ros2 topic echo /feedback/hand_status --once
+```
+
+正常输出示例（省略消息头）：
+
+```yaml
+status:
+- level: "\0"
+  name: hand
+  message: hand feedback available
+  hardware_id: "can0:hand"
+  values:
+  - {key: left_or_right, value: "1"}
+  - {key: thumb_tip_status, value: "0"}
+  - {key: thumb_base_status, value: "0"}
+  - {key: index_finger_status, value: "0"}
+  - {key: middle_finger_status, value: "0"}
+  - {key: ring_finger_status, value: "0"}
+  - {key: pinky_finger_status, value: "0"}
+```
 
 ### 控制话题
 

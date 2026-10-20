@@ -3,6 +3,7 @@
 import time
 import rclpy
 import math
+import json
 import re
 import threading
 from typing import Optional
@@ -22,8 +23,7 @@ from geometry_msgs.msg import Pose, PoseStamped, PoseArray
 from scipy.spatial.transform import Rotation as R
 
 from agx_arm_msgs.msg import (
-    AgxArmStatus, GripperStatus,
-    HandStatus, HandCmd, HandPositionTimeCmd,
+    HandCmd, HandPositionTimeCmd,
     MoveMITMsg
 )
 from agx_arm_ctrl.effector import (
@@ -339,18 +339,18 @@ class AgxArmRosNode(Node):
             PoseStamped, "feedback/tcp_pose", 1
         )
         self.arm_status_pub = self.create_publisher(
-            AgxArmStatus, "feedback/arm_status", 1
+            DiagnosticArray, "feedback/arm_status", 1
         )
         self.leader_joint_states_pub = self.create_publisher(
             JointState, "feedback/leader_joint_states", 1
         )
         if self.gripper is not None:
             self.gripper_status_pub = self.create_publisher(
-                GripperStatus, "feedback/gripper_status", 1
+                DiagnosticArray, "feedback/gripper_status", 1
             )
         if self.hand is not None and self.effector_type == "revo2":
             self.hand_status_pub = self.create_publisher(
-                HandStatus, "feedback/hand_status", 1
+                DiagnosticArray, "feedback/hand_status", 1
             )
         self.motor_status_pub = self.create_publisher(
             DiagnosticArray, "feedback/motor_status", 10
@@ -676,18 +676,10 @@ class AgxArmRosNode(Node):
                 name: "unknown"
                 for name in ("enabled", *fault_fields, *numeric_fields)
             }
-            values["low_speed_timestamp_ns"] = "unknown"
-            values["low_speed_age_s"] = "unknown"
-            values["control_enabled"] = str(self.control_enabled).lower()
             feedback = self.agx_arm.get_driver_states(joint_index)
             if feedback is not None:
                 timestamp = feedback.timestamp
                 age = now - timestamp
-                values["low_speed_timestamp_ns"] = (
-                    str(int(timestamp * 1e9)) if math.isfinite(timestamp)
-                    else "unknown"
-                )
-                values["low_speed_age_s"] = str(age)
                 if (
                     math.isfinite(timestamp)
                     and timestamp > 0.0
@@ -720,27 +712,52 @@ class AgxArmRosNode(Node):
             self._publish_arm_status()
             self._publish_effector_status()
 
+    def _publish_diagnostic_status(self, publisher, name, timestamp, values, level, message):
+        msg = DiagnosticArray()
+        msg.header.stamp = self._float_to_ros_time(timestamp)
+        status = DiagnosticStatus()
+        status.name = name
+        status.hardware_id = f"{self.can_port}:{name}"
+        status.level = level
+        status.message = message
+        status.values = [
+            KeyValue(key=key, value=value if isinstance(value, str) else json.dumps(value))
+            for key, value in values.items()
+        ]
+        msg.status = [status]
+        publisher.publish(msg)
+
     def _publish_arm_status(self):
         arm_status = self.agx_arm.get_arm_status()
         if arm_status is None:
             return
 
-        msg = AgxArmStatus()
-        msg.ctrl_mode = arm_status.msg.ctrl_mode
-        msg.arm_status = arm_status.msg.arm_status
-        msg.mode_feedback = arm_status.msg.mode_feedback
-        msg.teach_status = arm_status.msg.teach_status
-        msg.motion_status = arm_status.msg.motion_status
-        msg.trajectory_num = arm_status.msg.trajectory_num
-        err = arm_status.msg.err_status
-        for i in range(self.arm_joint_count):
-            angle_limit = getattr(err, f"joint_{i+1}_angle_limit")
-            comm_status = getattr(err, f"communication_status_joint_{i+1}")
-
-            msg.joint_angle_limit.append(angle_limit)
-            msg.communication_status_joint.append(comm_status)
-
-        self.arm_status_pub.publish(msg)
+        feedback = arm_status.msg
+        values = {
+            name: getattr(feedback, name)
+            for name in (
+                "ctrl_mode", "arm_status", "mode_feedback", "teach_status",
+                "motion_status", "trajectory_num",
+            )
+        }
+        values["err_status"] = feedback.err_code
+        values["joint_angle_limit"] = [
+            getattr(feedback.err_status, f"joint_{index}_angle_limit")
+            for index in range(1, self.arm_joint_count + 1)
+        ]
+        values["communication_status_joint"] = [
+            getattr(feedback.err_status, f"communication_status_joint_{index}")
+            for index in range(1, self.arm_joint_count + 1)
+        ]
+        level = DiagnosticStatus.OK
+        if feedback.err_code or feedback.arm_status in (*range(1, 11), 14, 15):
+            level = DiagnosticStatus.ERROR
+        elif feedback.arm_status not in (0, 11, 12, 13):
+            level = DiagnosticStatus.WARN
+        self._publish_diagnostic_status(
+            self.arm_status_pub, "arm", arm_status.timestamp, values, level,
+            f"arm_status={feedback.arm_status}, err_status={feedback.err_code}",
+        )
 
     def _publish_leader_joint_states(self):
         leader_joint_angles = self.agx_arm.get_leader_joint_angles()
@@ -769,43 +786,51 @@ class AgxArmRosNode(Node):
     def _publish_gripper_status(self):
         status = self.gripper.get_status()
         if status is not None:
-            msg = GripperStatus()
-            msg.header.stamp = self._float_to_ros_time(status.timestamp)
-            msg.width = status.width
-            msg.force = status.force
-            msg.voltage_too_low = status.voltage_too_low
-            msg.motor_overheating = status.motor_overheating
-            msg.driver_overcurrent = status.driver_overcurrent
-            msg.driver_overheating = status.driver_overheating
-            msg.sensor_status = status.sensor_status
-            msg.driver_error_status = status.driver_error_status
-            msg.driver_enable_status = status.driver_enable_status
-            msg.homing_status = status.homing_status
-            self.gripper_status_pub.publish(msg)
+            fault_fields = (
+                "voltage_too_low", "motor_overheating", "driver_overcurrent",
+                "driver_overheating", "sensor_status", "driver_error_status",
+            )
+            values = {
+                name: getattr(status, name)
+                for name in (
+                    *fault_fields,
+                    "driver_enable_status", "homing_status",
+                )
+            }
+            faults = [name for name in fault_fields if values[name]]
+            self._publish_diagnostic_status(
+                self.gripper_status_pub, "gripper", status.timestamp, values,
+                DiagnosticStatus.ERROR if faults else DiagnosticStatus.OK,
+                ", ".join(faults) if faults else (
+                    "enabled" if status.driver_enable_status else "disabled"
+                ),
+            )
 
     def _publish_hand_status(self):
         hand_status = self.hand.get_status()
-        finger_pos = self.hand.get_finger_position()
         if hand_status is not None:
-            msg = HandStatus()
-            msg.header.stamp = self._float_to_ros_time(hand_status.timestamp)
-            msg.left_or_right = hand_status.left_or_right
-            # status
-            msg.thumb_tip_status = hand_status.thumb_tip
-            msg.thumb_base_status = hand_status.thumb_base
-            msg.index_finger_status = hand_status.index_finger
-            msg.middle_finger_status = hand_status.middle_finger
-            msg.ring_finger_status = hand_status.ring_finger
-            msg.pinky_finger_status = hand_status.pinky_finger
-            # position
-            if finger_pos is not None:
-                msg.thumb_tip_pos = finger_pos.thumb_tip
-                msg.thumb_base_pos = finger_pos.thumb_base
-                msg.index_finger_pos = finger_pos.index_finger
-                msg.middle_finger_pos = finger_pos.middle_finger
-                msg.ring_finger_pos = finger_pos.ring_finger
-                msg.pinky_finger_pos = finger_pos.pinky_finger
-            self.hand_status_pub.publish(msg)
+            fingers = (
+                "thumb_tip", "thumb_base", "index_finger", "middle_finger",
+                "ring_finger", "pinky_finger",
+            )
+            values = {"left_or_right": hand_status.left_or_right}
+            for finger in fingers:
+                values[f"{finger}_status"] = getattr(hand_status, finger)
+            blocked = [finger for finger in fingers if getattr(hand_status, finger) == 2]
+            unexpected = [
+                finger for finger in fingers if getattr(hand_status, finger) not in (0, 1, 2)
+            ]
+            level = DiagnosticStatus.OK
+            message = "hand feedback available"
+            if blocked:
+                level = DiagnosticStatus.ERROR
+                message = "blocked: " + ", ".join(blocked)
+            elif unexpected:
+                level = DiagnosticStatus.WARN
+                message = "unknown motor status: " + ", ".join(unexpected)
+            self._publish_diagnostic_status(
+                self.hand_status_pub, "hand", hand_status.timestamp, values, level, message,
+            )
 
     def _publish_effector_status(self):
         if self.gripper is not None and self.gripper.is_ok():
