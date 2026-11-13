@@ -80,7 +80,6 @@ if TYPE_CHECKING:
 
 class AgxArmRosNode(Node):
 
-    _STATUS_RATE_HZ = 2.0
     _STATUS_TIMEOUT_S = 2.0
 
     def __init__(self):
@@ -355,9 +354,7 @@ class AgxArmRosNode(Node):
         self.motor_status_pub = self.create_publisher(
             DiagnosticArray, "feedback/motor_status", 10
         )
-        self._status_timer = self.create_timer(
-            1.0 / self._STATUS_RATE_HZ, self._publish_status
-        )
+        self._status_timer = self.create_timer(1.0 / 30.0, self._publish_status)
 
     def _setup_subscribers(self):
         self.create_subscription(

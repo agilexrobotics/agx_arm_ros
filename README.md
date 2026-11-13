@@ -624,7 +624,7 @@ ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py can_port:=can0 arm_type:
 `name` 为 SDK 关节名，`hardware_id` 为 `<can_port>:<从 1 开始的关节索引>`。
 话题遵循配置的命名空间，反馈不可用时仍继续发布。
 
-所有状态话题固定以 **2 Hz** 发布；电机反馈超过 **2 秒** 即过期。
+所有状态话题固定以 **30 Hz** 发布；电机反馈超过 **2 秒** 即过期。
 这些设置是内部常量，不是 ROS 参数，原有状态可用性检查保持不变。
 关节、TCP 位姿和主臂反馈仍使用 `pub_rate`（默认 200 Hz）。
 

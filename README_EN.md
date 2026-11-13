@@ -259,7 +259,7 @@ ros2 launch agx_arm_description display.launch.py custom_model:=agx_gripper/urdf
 | `fast_mode` | `false` | Enable fast mode (If enabled, `/control/joint_states` will internally switch to the unsmoothed and non-interpolated `move_js` joint control interface to command the robotic arm.) | `true`, `false` |
 | `speed_percent` | `0` | Motion speed (%); applied only for values from `1-100`, otherwise the SDK default is retained | - |
 | `fw_version` | empty string | Firmware version; auto-detected when empty, otherwise auto-detection is skipped. Use `vXXX` or `vXXXX`, e.g. `v190` or `v1891` | - |
-| `pub_rate` | `200` | Status publish rate (Hz) | - |
+| `pub_rate` | `200` | Joint and TCP pose feedback rate (Hz) | - |
 | `enable_timeout` | `5.0` | Enable timeout (seconds) | - |
 | `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | Tool Center Point (TCP) offset relative to the flange center [x, y, z, rx, ry, rz] | - |
 | `gripper_default_effort` | `1.0` | The default effort of the gripper (in N) | `>=0.0` |
@@ -626,7 +626,7 @@ excluding end effectors. `name` is the SDK joint name; `hardware_id` is
 `<can_port>:<1-based joint index>`. The topic follows the configured namespace and
 continues publishing when feedback is unavailable.
 
-All status topics publish at a fixed **2 Hz**; motor feedback expires after **2 seconds**.
+All status topics publish at a fixed **30 Hz**; motor feedback expires after **2 seconds**.
 These settings are internal, not ROS parameters. Status availability checks are unchanged.
 Joint, TCP pose and leader feedback still use `pub_rate` (default 200 Hz).
 
