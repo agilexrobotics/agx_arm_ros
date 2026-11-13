@@ -1073,6 +1073,10 @@ Message type: `agx_arm_msgs/HandPositionTimeCmd`
 | `/emergency_stop` | `std_srvs/Empty` | Emergency stop (hold current position) | Always available |
 | `/exit_teach_mode` | `std_srvs/Empty` | Exit teach mode | Piper series |
 
+### Stopping the Driver
+
+After Ctrl+C or ROS context shutdown, the node destroys its ROS resources and shuts down the context idempotently. Exiting the node does not disable the arm; first close `/control_enable`, call `/enable_agx_arm` with `false`, and confirm that the latest `/feedback/motor_status` reports `enabled=false` for every motor.
+
 ---
 
 ## Parameter Limits

@@ -1069,6 +1069,10 @@ ros2 topic pub /control/joint_states sensor_msgs/msg/JointState \
 | `/emergency_stop` | `std_srvs/Empty` | 急停（保持当前位置） | 始终可用 |
 | `/exit_teach_mode` | `std_srvs/Empty` | 退出示教模式 | Piper 系列 |
 
+### 停止驱动
+
+Ctrl+C 或 ROS context 关闭后，节点销毁 ROS 资源并幂等关闭 context。退出节点不等于机械臂失能；停止前应关闭 `/control_enable`、调用 `/enable_agx_arm` 传入 `false`，并确认全部电机的最新 `/feedback/motor_status` 均报告 `enabled=false`。
+
 ---
 
 ## 参数限制

@@ -15,6 +15,7 @@ from pyAgxArm import (
     resolve_firmware_profile,
 )
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from sensor_msgs.msg import JointState
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from builtin_interfaces.msg import Time
@@ -1232,16 +1233,21 @@ class AgxArmRosNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    node = None
 
     try:
         node = AgxArmRosNode()
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     except Exception as e:
         print(f"Error occurred: {e}")
     finally:
-        rclpy.shutdown()
+        try:
+            if node is not None:
+                node.destroy_node()
+        finally:
+            rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
