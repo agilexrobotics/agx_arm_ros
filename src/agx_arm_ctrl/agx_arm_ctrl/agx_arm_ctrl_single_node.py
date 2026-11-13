@@ -514,11 +514,15 @@ class AgxArmRosNode(Node):
 
     ### publisher thread
     def _publish_thread(self):
-        rate = self.create_rate(self.pub_rate)
+        if self.pub_rate <= 0:
+            raise ValueError("pub_rate must be > 0")
+        period = 1.0 / self.pub_rate
+        next_deadline = time.perf_counter()
         feedback_alive = True
 
         # publishing loop
         while rclpy.ok():
+            next_deadline += period
             if self.agx_arm.is_ok():
                 if not feedback_alive:
                     feedback_alive = True
@@ -547,7 +551,12 @@ class AgxArmRosNode(Node):
                     self.get_logger().warn("Agx_arm feedback lost")
                     self.cpv_cv_configured_joints.clear()
                     self.control_ready = False
-            rate.sleep()
+            now = time.perf_counter()
+            sleep_time = next_deadline - now
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                next_deadline = now
 
     ### publish methods
     def _get_gripper_joint_data(self):
