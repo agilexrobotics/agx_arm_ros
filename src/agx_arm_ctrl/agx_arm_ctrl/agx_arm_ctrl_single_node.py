@@ -656,7 +656,6 @@ class AgxArmRosNode(Node):
     def _publish_status(self):
         msg = DiagnosticArray()
         msg.header.stamp = self.get_clock().now().to_msg()
-        now = time.time()
         fault_fields = {
             "undervoltage": "voltage_too_low",
             "motor_overtemp": "motor_overheating",
@@ -686,7 +685,8 @@ class AgxArmRosNode(Node):
             feedback = self.agx_arm.get_driver_states(joint_index)
             if feedback is not None:
                 timestamp = feedback.timestamp
-                age = now - timestamp
+                # Read the clock after the cache; the CAN thread may update it at any time.
+                age = time.time() - timestamp
                 if (
                     math.isfinite(timestamp)
                     and timestamp > 0.0
