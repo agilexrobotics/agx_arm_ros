@@ -48,3 +48,13 @@ def test_frame_cached_during_publish_is_fresh(monkeypatch):
     driver.AgxArmRosNode._publish_status(node)
     statuses = node.motor_status_pub.publish.call_args.args[0].status
     assert [status.level for status in statuses] == [DiagnosticStatus.OK] * 2
+
+
+def test_disable_clears_enable_wish_even_if_unconfirmed(monkeypatch):
+    monkeypatch.setattr(driver.time, "sleep", lambda s: None)
+    node = Mock()
+    node.enable_flag = True
+    node.agx_arm.disable.return_value = True
+    node.agx_arm.get_joint_enable_status.return_value = True
+    assert driver.AgxArmRosNode._enable_arm(node, False, timeout=0.1)
+    assert node.enable_flag is False

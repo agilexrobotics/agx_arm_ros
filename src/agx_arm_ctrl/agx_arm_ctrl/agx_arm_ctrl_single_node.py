@@ -475,6 +475,8 @@ class AgxArmRosNode(Node):
 
     def _enable_arm(self, enable: bool = True, timeout: float = 5.0) -> bool:
         action_name = "enable" if enable else "disable"
+        if not enable:
+            self.enable_flag = False
 
         if enable:
             wait_start = time.time()
